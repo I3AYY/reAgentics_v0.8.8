@@ -1,0 +1,278 @@
+<style>
+    /* =========================================================================
+       System: reAgentics - Laboratory Reagent Management System
+       Version: 0.8.8 (AI Core)
+       File: css.html (Custom Styles & Overrides)
+       Developer: P. PURICUMPEE & AI Assistant
+       ========================================================================= */
+
+    /* --- 1. Fonts & Typography --- */
+    /* Noto Sans Thai (ไทย), Montserrat (อังกฤษ), Roboto Mono (ตัวเลข/โค้ด) เน้นบาง-ปกติ */
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Roboto+Mono:wght@300;400;500;600;700&display=swap');
+
+    /* --- 2. THEME VARIABLES (High Contrast iOS Liquid Glass) --- */
+    :root {
+        /* Light Theme (Default) */
+        --bg-main: #f4f7f6;
+        --bg-sidebar: rgba(255, 255, 255, 0.85);
+        --bg-card: rgba(255, 255, 255, 0.9);
+        --bg-thead: #ffffff;
+        --bg-input: #f8fafc;
+        --text-main: #1e293b;
+        --text-muted: #64748b;
+        --border-color: rgba(0, 0, 0, 0.08); 
+        --border-input: #cbd5e1;
+        --shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+        --glass-blur: blur(20px) saturate(180%);
+        --row-hover: rgba(0, 0, 0, 0.03); 
+    }
+
+    [data-theme="dark"] {
+        /* Dark Theme - ปรับให้สว่างขึ้นเล็กน้อย ไม่มืดทึบจนเกินไป */
+        --bg-main: #1e293b;         
+        --bg-sidebar: rgba(40, 53, 72, 0.85); 
+        --bg-card: rgba(40, 53, 72, 0.9);     
+        --bg-thead: #283548;
+        --bg-input: rgba(15, 23, 42, 0.6);    
+        --text-main: #f8fafc;
+        --text-muted: #cbd5e1;
+        --border-color: rgba(255, 255, 255, 0.12);
+        --border-input: #475569;
+        --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        --glass-blur: blur(20px) saturate(150%);
+        --row-hover: rgba(255, 255, 255, 0.08);
+    }
+
+    [data-theme="eyecare"] {
+        /* Eyecare (Sepia) Theme */
+        --bg-main: #fbf6ec;
+        --bg-sidebar: rgba(248, 241, 227, 0.85);
+        --bg-card: rgba(244, 236, 222, 0.9);
+        --bg-thead: #f4ecde;
+        --bg-input: rgba(255, 252, 245, 0.95);
+        --text-main: #433422;
+        --text-muted: #8c7e6e;
+        --border-color: rgba(100, 80, 50, 0.12);
+        --border-input: #d8cbbb;
+        --shadow-glass: 0 8px 32px 0 rgba(100, 80, 50, 0.06);
+        --glass-blur: blur(20px) saturate(160%);
+        --row-hover: rgba(100, 80, 50, 0.04);
+    }
+
+    /* --- Base Application --- */
+    body { 
+        /* ลำดับ Font: อังกฤษก่อน, ไทยตาม */
+        font-family: 'Montserrat', 'Noto Sans Thai', sans-serif;
+        font-weight: 300; 
+        transition: background-color 0.5s ease, color 0.5s ease;
+        font-size: 15px;
+    }
+    
+    /* ให้ตัวหนาดูนุ่มนวลขึ้น */
+    h1, h2, h3, h4, h5, h6, .font-bold { font-weight: 500; }
+    .font-extrabold, .font-black { font-weight: 600; }
+    
+    /* ตัวเลขและรหัส ใช้ Roboto Mono */
+    .font-mono, input[type="number"], .barcode-input {
+        font-family: 'Roboto Mono', monospace !important;
+    }
+
+    /* การจัดการ Z-Index ให้อยู่บนสุดเสมอ (แก้ไขเพื่อแก้บั๊ก Sign out บน Lock Screen) */
+    .swal2-container { z-index: 100005 !important; } /* ให้ SweetAlert2 ทะลุขึ้นมาอยู่หน้าสุดเสมอ */
+    .lock-screen-override { z-index: 99999 !important; }
+
+    .theme-text { color: var(--text-main); }
+    .theme-text-muted { color: var(--text-muted); }
+    .theme-border { border-color: var(--border-color); }
+    .theme-row-hover:hover { background-color: var(--row-hover) !important; }
+
+    /* iOS Liquid Glass Classes */
+    .liquid-glass {
+        background: var(--bg-card);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-glass);
+        transition: all 0.5s ease;
+    }
+    .liquid-sidebar {
+        background: var(--bg-sidebar);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border-right: 1px solid var(--border-color);
+    }
+
+    /* --- 3. Inputs & UI Components --- */
+    .label-sm { display: block; font-size: 0.875rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.1rem; }
+    .input-std { 
+        width: 100%; border: 1px solid var(--border-input); padding: 0.35rem 0.6rem;
+        border-radius: 0.5rem; font-size: 0.9375rem; outline: none; 
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: var(--bg-input);
+        color: var(--text-main); min-height: 38px; font-family: 'Montserrat', 'Noto Sans Thai', sans-serif; font-weight: 400;
+    }
+    .input-std:focus { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-color: #0ea5e9; }
+    
+    input[type="number"]::-webkit-outer-spin-button, 
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; }
+
+    input:disabled, select:disabled, textarea:disabled, .cursor-not-allowed {
+        background-color: rgba(0,0,0,0.05) !important; border-color: transparent !important;
+        color: var(--text-muted) !important; opacity: 0.7 !important; box-shadow: none !important;
+    }
+
+    /* Theme-aware Barcode Input */
+    .input-barcode-theme {
+        background-color: var(--bg-input) !important;
+        color: var(--text-main) !important;
+        border-color: #f59e0b !important;
+    }
+
+    /* --- 4. Custom Scrollbar --- */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-input); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    .custom-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+    .custom-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    
+    /* ซ่อน Scrollbar สำหรับ Tabs */
+    .hide-scroll::-webkit-scrollbar { display: none; }
+    .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* --- 5. Transitions & Animations --- */
+    .page-view { animation: fadeIn 0.4s ease-out forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .fade-enter-active, .fade-leave-active { transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+    .fade-enter-from, .fade-leave-to { opacity: 0; }
+    
+    .slide-fade-enter-active { transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+    .slide-fade-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    .slide-fade-enter-from, .slide-fade-leave-to { transform: translateY(20px); opacity: 0; }
+
+    /* Animation สำหรับแสดง Popup ภาพน้ำยา */
+    @keyframes fadeInPopup {
+        from { opacity: 0; transform: scale(0.9) translateX(-10px); }
+        to { opacity: 1; transform: scale(1) translateX(0); }
+    }
+    .animate-fade-in {
+        animation: fadeInPopup 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes blob { 0% { transform: translate(0px, 0px) scale(1); } 33% { transform: translate(40px, -60px) scale(1.1); } 66% { transform: translate(-30px, 30px) scale(0.9); } 100% { transform: translate(0px, 0px) scale(1); } }
+    .animate-blob { animation: blob 8s infinite alternate ease-in-out; }
+    .animation-delay-2000 { animation-delay: 2s; } 
+    .animation-delay-4000 { animation-delay: 4s; }
+
+    /* Colorful Pastel Text Animation */
+    @keyframes pastel-breathing { 
+        0% { background-position: 0% 50%; } 
+        50% { background-position: 100% 50%; } 
+        100% { background-position: 0% 50%; } 
+    }
+    .animated-pastel-text { 
+        background: linear-gradient(270deg, #ff9a9e, #fecfef, #a1c4fd, #c2e9fb, #e0c3fc); 
+        background-size: 300% 300%; 
+        -webkit-background-clip: text; 
+        -webkit-text-fill-color: transparent; 
+        animation: pastel-breathing 5s ease infinite; 
+        line-height: 1.3; 
+        padding-bottom: 0.15em; 
+    }
+    
+    .gimmick-hover { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); display: inline-block; }
+    .gimmick-hover:hover { transform: scale(1.1) translateY(-2px); font-weight: 600; }
+
+    /* --- 6. Data Table Enhancements --- */
+    thead.sticky, #inventory-table th, th.sticky {
+        position: sticky; top: 0; background-color: var(--bg-thead) !important; z-index: 10;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05), inset 0 -1px 0 0 var(--border-color);
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+    #inventory-table tbody tr { transition: background-color 0.2s ease; border-bottom: 1px solid var(--border-color); }
+
+    /* Pastel Colors for Stock Balance */
+    .stock-high { color: #10b981; } /* Green */
+    .stock-medium { color: #f59e0b; } /* Yellow/Amber */
+    .stock-low { color: #ef4444; } /* Red */
+    .stock-suspended { color: #94a3b8; text-decoration: line-through; } /* Gray for suspended */
+
+    /* --- 7. SweetAlert2 Theme Overrides --- */
+    div:where(.swal2-container) div:where(.swal2-popup) {
+        font-family: 'Montserrat', 'Noto Sans Thai', sans-serif !important; border-radius: 1rem !important; padding: 1.5rem !important;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+        background: var(--bg-card) !important; backdrop-filter: var(--glass-blur) !important; -webkit-backdrop-filter: var(--glass-blur) !important;
+        border: 1px solid var(--border-color) !important; color: var(--text-main) !important; font-weight: 300;
+    }
+    div:where(.swal2-container) h2:where(.swal2-title), div:where(.swal2-container) div:where(.swal2-html-container) { color: var(--text-main) !important; font-weight: 400 !important; }
+    div:where(.swal2-container) button:where(.swal2-styled).swal2-confirm { background-color: #0ea5e9 !important; border-radius: 0.5rem !important; font-weight: 500 !important; padding: 0.625rem 1.5rem !important; }
+    div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { background-color: var(--bg-input) !important; color: var(--text-muted) !important; border: 1px solid var(--border-input) !important; border-radius: 0.5rem !important; font-weight: 500 !important; padding: 0.625rem 1.5rem !important; }
+
+    div:where(.swal2-container) input:where(.swal2-input),
+    div:where(.swal2-container) select:where(.swal2-select),
+    div:where(.swal2-container) textarea:where(.swal2-textarea) {
+        background-color: var(--bg-input) !important;
+        color: var(--text-main) !important;
+        border: 1px solid var(--border-input) !important;
+        border-radius: 0.5rem !important; font-family: 'Montserrat', 'Noto Sans Thai', sans-serif !important; font-weight: 400 !important;
+    }
+    div:where(.swal2-container) input:where(.swal2-input):focus,
+    div:where(.swal2-container) select:where(.swal2-select):focus {
+        border-color: #0ea5e9 !important;
+        box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2) !important;
+    }
+
+    div:where(.swal2-icon).swal2-success [class^=swal2-success-circular-line],
+    div:where(.swal2-icon).swal2-success .swal2-success-fix { background-color: transparent !important; }
+
+    /* --- 8. STICKER WYSIWYG DESIGNER CSS & DARK MODE OVERRIDES --- */
+    .sticker-designer-modal { width: 100%; max-width: 900px; display: grid; grid-template-columns: 1fr; }
+    @media (min-width: 768px) { .sticker-designer-modal { grid-template-columns: 1fr 320px; } }
+    
+    .canvas-zoom-wrapper { position: relative; overflow: auto; background: var(--bg-input); padding: 30px; border-radius: 8px; display: flex; justify-content: center; align-items: center; min-height: 350px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.05); }
+    
+    .sticker-canvas-bg { background-image: radial-gradient(#cbd5e1 1.5px, transparent 1.5px); background-size: 5mm 5mm; background-color: #ffffff; border: 1px solid #cbd5e1; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); position: relative; overflow: hidden; margin: 0 auto; transform-origin: center center; transition: transform 0.2s ease-out; }
+    .sticker-element { position: absolute; cursor: grab; user-select: none; white-space: nowrap; line-height: 1; transform-origin: center center; border: 2px dashed transparent; transition: border-color 0.1s, background-color 0.1s; padding: 2px; color: black; z-index: 10; }
+    .sticker-element:active { cursor: grabbing; }
+    .sticker-element:hover { border-color: #94a3b8; }
+    .sticker-element.active { border-color: #ec4899 !important; background-color: rgba(236, 72, 153, 0.1) !important; z-index: 20; border-radius: 4px; }
+
+    /* Dark Mode รองรับสีพื้นหลัง Tabs แบบใหม่ */
+    [data-theme="dark"] .bg-white,
+    [data-theme="dark"] .bg-slate-50,
+    [data-theme="dark"] .bg-slate-50\/50,
+    [data-theme="dark"] .bg-blue-50\/50,
+    [data-theme="dark"] .bg-amber-50\/50,
+    [data-theme="dark"] .bg-emerald-50\/50,
+    [data-theme="dark"] .bg-purple-50\/50,
+    [data-theme="dark"] .bg-indigo-50\/50,
+    [data-theme="dark"] .bg-sky-50\/50,
+    [data-theme="dark"] .bg-sky-50,
+    [data-theme="dark"] .bg-emerald-50 {
+        background-color: var(--bg-card) !important;
+        border-color: var(--border-color) !important;
+        color: var(--text-main) !important;
+    }
+    [data-theme="dark"] .text-slate-700,
+    [data-theme="dark"] .text-black { color: var(--text-main) !important; }
+    
+    [data-theme="dark"] .sticker-canvas-bg { background-color: #ffffff !important; }
+    [data-theme="dark"] .sticker-element { color: #000000 !important; }
+
+    /* --- 9. PRINT STYLES --- */
+    .sticker-preview { width: 50mm; height: 30mm; border: 1px dashed #cbd5e1; padding: 2mm; background: white; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box; }
+    .print-bg-slate { background-color: #F8FAFC !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    
+    @media print {
+        @page { size: 50mm 30mm; margin: 0; }
+        body * { visibility: hidden; }
+        #print-area, #print-area * { visibility: visible; }
+        #print-area { position: absolute; left: 0; top: 0; width: 100%; display: flex; flex-direction: column; gap: 10px; font-family: 'Montserrat', 'Noto Sans Thai', sans-serif; }
+    }
+
+    /* --- 10. DEEP SPACE BACKGROUND FOR LOGIN --- */
+    .bg-deep-space { background-color: #0f172a !important; }
+</style>
