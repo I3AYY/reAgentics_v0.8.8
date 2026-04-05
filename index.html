@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>reAgentics | Lab Inventory System (v0.8.8 AI Core)</title>
+    
+    <!-- Core Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { labBlue: '#0ea5e9', labDark: '#0f172a' } } } }
+    </script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+    <?!= include('css'); ?>
+    <style> [v-cloak] { display: none !important; } </style>
+</head>
+<body class="antialiased h-screen overflow-hidden flex flex-col transition-colors duration-500">
+    <div id="app" v-cloak class="w-full h-full relative">
+        <!-- 1. Global Loading & Screen Lock -->
+        <transition name="fade">
+            <div v-if="isLoading" class="fixed inset-0 z-[100000] bg-slate-900/40 backdrop-blur-md flex items-center justify-center no-print">
+                <div class="p-8 rounded-[2rem] flex flex-col items-center shadow-2xl border border-slate-200/50 bg-white dark:bg-slate-800 dark:border-slate-700">
+                    <i class="ph ph-spinner-gap animate-spin text-5xl text-sky-500 mb-4 inline-block origin-center"></i>
+                    <span class="text-slate-700 dark:text-white font-bold tracking-wide mt-2">Loading System...</span>
+                </div>
+            </div>
+        </transition>
+
+        <transition name="screen-lock">
+            <div v-if="isLocked && page !== 'login'" class="fixed inset-0 z-[99999] bg-deep-space flex flex-col items-center justify-center p-6 text-white text-center overflow-hidden no-print lock-screen-override">
+                <div class="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-sky-500/40 rounded-full mix-blend-screen filter blur-[100px] animate-blob pointer-events-none"></div>
+                <div class="absolute top-[20%] right-[-10%] w-[400px] h-[400px] bg-purple-400/40 rounded-full mix-blend-screen filter blur-[100px] animate-blob animation-delay-2000 pointer-events-none"></div>
+                <div class="absolute bottom-[-15%] left-[25%] w-[600px] h-[600px] bg-pink-500/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob animation-delay-4000 pointer-events-none"></div>
+
+                <div class="liquid-glass rounded-[2rem] p-10 w-full max-w-md relative z-10 text-center" style="--bg-card: rgba(255, 255, 255, 0.1); border-color: rgba(255,255,255,0.2);">
+                    <h1 class="text-4xl font-extrabold tracking-tight mb-1 pb-1 animated-pastel-text">reAgentics</h1>
+                    <p class="text-[11px] text-slate-300 uppercase tracking-widest font-semibold mb-6">Laboratory Reagent Management</p>
+                    
+                    <div class="w-24 h-24 mx-auto mb-4 rounded-full overflow-hidden border-4 border-slate-700/50 shadow-xl relative z-10 bg-slate-800 flex items-center justify-center">
+                        <img v-if="user.image" :src="user.image" class="w-full h-full object-cover">
+                        <i v-else class="ph ph-user text-5xl text-slate-400"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold mb-1 text-white">{{ user.name }}</h2>
+                    <p class="text-pink-300 text-[11px] mb-6 font-bold tracking-widest uppercase bg-pink-900/30 inline-block px-3 py-1 rounded-full border border-pink-500/30 shadow-inner">โหมดพักหน้าจอ (Locked)</p>
+                    
+                    <form @submit.prevent="unlockScreen" class="w-full max-w-sm mx-auto flex flex-col gap-4 relative z-20">
+                        <div class="relative">
+                            <i class="ph ph-lock-key absolute left-4 top-3.5 text-slate-400 text-lg"></i>
+                            <input v-model="lockPassword" type="password" class="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl focus:ring-2 focus:ring-pink-400 outline-none text-white text-center tracking-widest font-medium placeholder-slate-400 transition-all font-mono" placeholder="Enter Password" required>
+                        </div>
+                        <p v-if="lockError" class="text-rose-400 text-sm font-bold">{{ lockError }}</p>
+                        <button type="submit" class="w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 mt-1">Unlock Screen</button>
+                        
+                        <div class="pt-6 mt-2 border-t border-white/10 text-center">
+                            <p class="text-[10px] text-slate-400 font-medium mb-1">Developed by</p>
+                            <p class="text-[11px] font-bold text-slate-300 tracking-wider animated-pastel-text inline-block">P. PURICUMPEE</p>
+                            <br>
+                            <button type="button" @click="handleLogout" class="mt-4 text-slate-400 hover:text-white text-[12px] font-semibold transition-colors underline decoration-slate-500 underline-offset-4 relative z-50">Not {{ user.name }}? Sign out</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </transition>
+
+        <!-- 2. LOGIN PAGE -->
+        <transition name="slide-fade" mode="out-in">
+            <div v-if="page === 'login'" key="login" class="min-h-screen flex items-center justify-center p-4 bg-deep-space w-full relative overflow-hidden">
+                <div class="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-sky-500/40 rounded-full mix-blend-screen filter blur-[100px] animate-blob pointer-events-none"></div>
+                <div class="absolute top-[20%] right-[-10%] w-[400px] h-[400px] bg-purple-400/40 rounded-full mix-blend-screen filter blur-[100px] animate-blob animation-delay-2000 pointer-events-none"></div>
+                <div class="absolute bottom-[-15%] left-[25%] w-[600px] h-[600px] bg-pink-500/30 rounded-full mix-blend-screen filter blur-[100px] animate-blob animation-delay-4000 pointer-events-none"></div>
+
+                <div class="liquid-glass rounded-[2rem] p-8 md:p-10 w-full max-w-md relative z-10 text-center shadow-2xl" style="--bg-card: rgba(255, 255, 255, 0.1); border-color: rgba(255,255,255,0.2);">
+                    <div class="inline-flex items-center justify-center w-40 h-40 md:w-48 md:h-48 mb-6 bg-transparent rounded-3xl p-0 overflow-hidden">
+                        <img v-if="systemConfig.logoUrl" :src="systemConfig.logoUrl" class="w-full h-full object-contain filter drop-shadow-2xl" onerror="this.style.display='none'">
+                        <i v-else class="ph ph-microscope text-7xl text-white"></i>
+                    </div>
+                    
+                    <h1 class="text-4xl font-extrabold tracking-tight mb-1 pb-1 animated-pastel-text">reAgentics</h1>
+                    <p class="text-[11px] text-slate-300 uppercase tracking-widest font-semibold mb-8">Laboratory Reagent Management</p>
+                    
+                    <form v-if="loginStep === 1" @submit.prevent="handleLoginStep1" class="space-y-5 animate-slide-up text-left">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1.5 ml-1 uppercase tracking-wider">User ID</label>
+                            <div class="relative">
+                                <i class="ph ph-identification-badge absolute left-4 top-3.5 text-slate-400 text-lg"></i>
+                                <input v-model="formLogin.username" type="text" class="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl focus:ring-2 focus:ring-purple-400 outline-none transition-all text-white font-medium" placeholder="Enter your ID" required>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1.5 ml-1 uppercase tracking-wider">Password</label>
+                            <div class="relative">
+                                <i class="ph ph-lock-key absolute left-4 top-3.5 text-slate-400 text-lg"></i>
+                                <input v-model="formLogin.password" type="password" class="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl focus:ring-2 focus:ring-purple-400 outline-none transition-all text-white font-medium" placeholder="Enter password" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 mt-2">Sign In</button>
+                        <div class="text-center pt-8 border-t border-white/10">
+                            <p class="text-[11px] text-slate-400 font-medium mb-1">Version {{ appVersion.split(' ')[0] }}</p>
+                            <p class="text-[11px] text-slate-400 font-medium mt-2 block">Developed by<br><span class="gimmick-hover cursor-pointer mt-1 animated-pastel-text font-black text-[13px] tracking-widest block pb-1">P. PURICUMPEE</span></p>
+                        </div>
+                    </form>
+
+                    <form v-else @submit.prevent="handleLoginStep2" class="space-y-3 animate-slide-up text-left">
+                        <div class="text-center bg-indigo-500/20 border border-indigo-400/50 text-indigo-100 p-4 rounded-2xl text-sm mb-2 backdrop-blur-sm shadow-sm">
+                            <i class="ph ph-envelope-open text-2xl block mb-2 text-indigo-400 mx-auto"></i>{{ otpMessage }}
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 mb-1.5 text-center uppercase tracking-widest">OTP Code</label>
+                            <input v-model="otpInput" type="text" maxlength="6" class="w-full text-center tracking-[0.7em] text-3xl font-bold py-4 bg-white/10 border-2 border-indigo-400/50 rounded-2xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20 outline-none text-white transition-all shadow-inner font-mono" placeholder="••••••" required>
+                        </div>
+                        <div class="flex justify-between items-center mb-3 px-1">
+                            <button type="button" @click="handleCancelLogin" class="text-slate-400 hover:text-white text-sm font-semibold transition-colors flex items-center gap-1"><i class="ph ph-arrow-left"></i> Back</button>
+                            <button type="button" @click="handleResendOtp" :disabled="otpCooldown > 0" class="text-pink-400 hover:text-pink-300 text-sm font-bold disabled:text-slate-500 disabled:cursor-not-allowed transition-colors">
+                                {{ otpCooldown > 0 ? `Resend OTP (${otpCooldown}s)` : 'Resend OTP' }}
+                            </button>
+                        </div>
+                        <button type="submit" class="w-full bg-gradient-to-r from-teal-400 to-emerald-500 hover:from-teal-500 hover:to-emerald-600 text-white font-bold py-4 rounded-2xl shadow-lg transition-all transform hover:-translate-y-0.5">Verify Identity</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 3. MAIN APP LAYOUT -->
+            <div v-else key="app" class="flex h-screen w-full overflow-hidden">
+                <!-- Sidebar -->
+                <aside :class="['liquid-sidebar shadow-lg flex flex-col shrink-0 z-30 h-full transition-all duration-300 absolute md:relative', isSidebarOpen ? 'w-[280px] translate-x-0' : 'w-20 -translate-x-full md:translate-x-0']">
+                    <button @click="isSidebarOpen = !isSidebarOpen" class="hidden md:flex absolute -right-3.5 top-8 bg-[var(--bg-input)] theme-border border rounded-full w-7 h-7 items-center justify-center shadow-md text-slate-400 hover:text-indigo-600 z-40 transition-transform hover:scale-110" :class="!isSidebarOpen ? 'rotate-180' : ''"><i class="ph ph-caret-left text-sm font-bold"></i></button>
+                    <button @click="isSidebarOpen = false" class="md:hidden absolute -right-3.5 top-8 bg-white border border-slate-200 rounded-full w-7 h-7 flex items-center justify-center shadow-md text-slate-400 hover:text-rose-600 z-40"><i class="ph ph-x text-sm font-bold"></i></button>
+
+                    <div class="p-4 border-b theme-border flex flex-col items-center gap-2 shrink-0 h-[110px] justify-center overflow-hidden">
+                        <div class="flex items-center gap-3 w-full justify-center">
+                            <div class="w-14 h-14 flex items-center justify-center bg-transparent rounded-xl shadow-sm shrink-0 overflow-hidden">
+                                <img v-if="systemConfig.logoUrl" :src="systemConfig.logoUrl" class="w-full h-full object-contain filter drop-shadow-sm" onerror="this.style.display='none'">
+                                <i v-else class="ph ph-flask text-3xl text-indigo-500"></i>
+                            </div>
+                            <div v-show="isSidebarOpen" class="whitespace-nowrap transition-opacity duration-300 flex flex-col justify-center">
+                                <h2 class="font-extrabold text-2xl theme-text tracking-tight pb-1 animated-pastel-text">reAgentics</h2>
+                                <span class="text-[9px] text-white bg-indigo-600 font-bold px-1.5 py-0.5 rounded-md self-start mt-0 shadow-sm">{{ appVersion.split(' ')[0] }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="p-4 border-b theme-border shrink-0 overflow-hidden bg-[var(--bg-sidebar)]">
+                        <div @click="showProfileModal=true" class="flex items-center justify-center md:justify-start gap-3 cursor-pointer hover:bg-black/5 p-2 rounded-xl transition-all group">
+                            <div class="w-11 h-11 rounded-full bg-purple-100 text-purple-600 border-2 theme-border shadow-sm overflow-hidden flex items-center justify-center group-hover:ring-4 ring-purple-200 transition-all shrink-0 font-bold text-lg">
+                                <img v-if="user.image" :src="user.image" class="w-full h-full object-cover">
+                                <span v-else>{{ user.name.charAt(0) }}</span>
+                            </div>
+                            <div v-show="isSidebarOpen" class="overflow-hidden">
+                                <div class="text-[15px] font-bold theme-text truncate">{{ user.name }}</div>
+                                <div class="text-[11px] text-sky-600 font-bold truncate mt-0.5">{{ user.group || 'Staff' }}</div>
+                                <div class="text-[10px] text-purple-500 font-semibold truncate leading-tight">
+                                    {{ user.role }}<span v-if="(user.role || '').toUpperCase() === 'MANAGER' && user.unitIdRaw"> ({{ user.unitIdRaw }})</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-3 border-b theme-border shrink-0 flex flex-col items-center justify-center transition-all bg-[var(--bg-sidebar)]">
+                        <label v-show="isSidebarOpen" class="text-[12px] font-semibold theme-text-muted w-full text-left mb-1.5 px-2 uppercase tracking-widest whitespace-nowrap overflow-hidden flex items-center gap-1.5"><i class="ph ph-database text-indigo-500 text-[14px]"></i> ข้อมูลปี</label>
+                        <div class="relative group w-full flex justify-center px-1">
+                            <select v-model="config.selectedYear" :class="['bg-[var(--bg-input)] hover:bg-black/5 border theme-border font-bold appearance-none outline-none cursor-pointer transition-all animated-pastel-text shadow-sm focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 w-full font-mono', isSidebarOpen ? 'text-left px-3 py-2 text-[15px] rounded-xl' : 'text-center px-1 py-1.5 text-[12px] rounded-lg']" :title="!isSidebarOpen ? 'เปลี่ยนปี' : ''">
+                                <option v-for="y in config.years" :key="y" :value="y" class="font-bold text-slate-700">{{ y }}</option>
+                            </select>
+                            <i v-show="isSidebarOpen" class="ph ph-caret-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors"></i>
+                        </div>
+                    </div>
+
+                    <nav class="flex-1 p-3 space-y-1.5 overflow-y-auto overflow-x-hidden">
+                        <a href="#" @click.prevent="page = 'dashboard'" :class="['flex items-center gap-4 px-3 py-3.5 rounded-2xl transition-all group overflow-hidden', page === 'dashboard' ? 'bg-violet-500/10 text-violet-600 shadow-sm border border-violet-500/20' : 'theme-text-muted hover:bg-black/5 hover:theme-text']" :title="!isSidebarOpen ? 'สถิติ (Dashboard)' : ''">
+                            <div class="w-8 flex justify-center"><i class="ph ph-chart-pie-slice text-2xl group-hover:text-violet-500 transition-all group-hover:scale-110"></i></div>
+                            <span v-show="isSidebarOpen" class="whitespace-nowrap font-bold text-[15px]">สถิติ (Dashboard)</span>
+                        </a>
+                        <a href="#" @click.prevent="page = 'inventory'" :class="['flex items-center gap-4 px-3 py-3.5 rounded-2xl transition-all group overflow-hidden', page === 'inventory' ? 'bg-emerald-500/10 text-emerald-600 shadow-sm border border-emerald-500/20' : 'theme-text-muted hover:bg-black/5 hover:theme-text']" :title="!isSidebarOpen ? 'ทะเบียนน้ำยา' : ''">
+                            <div class="w-8 flex justify-center"><i class="ph ph-package text-2xl group-hover:text-emerald-500 transition-transform"></i></div>
+                            <span v-show="isSidebarOpen" class="whitespace-nowrap font-bold text-[15px]">ทะเบียนน้ำยา</span>
+                        </a>
+                        <a href="#" @click.prevent="page = 'transactions'" :class="['flex items-center gap-4 px-3 py-3.5 rounded-2xl transition-all group overflow-hidden', page === 'transactions' ? 'bg-amber-500/10 text-amber-600 shadow-sm border border-amber-500/20' : 'theme-text-muted hover:bg-black/5 hover:theme-text']" :title="!isSidebarOpen ? 'จัดการน้ำยา' : ''">
+                            <div class="w-8 flex justify-center"><i class="ph ph-arrows-left-right text-2xl group-hover:text-amber-500 transition-transform"></i></div>
+                            <span v-show="isSidebarOpen" class="whitespace-nowrap font-bold text-[15px]">จัดการน้ำยา (รับ/เบิก)</span>
+                        </a>
+                    </nav>
+
+                    <div class="p-3 border-t theme-border shrink-0 flex flex-col gap-1.5">
+                        <button @click="lockScreen" class="w-full flex items-center justify-center md:justify-start pl-0 md:pl-2 gap-3 theme-text-muted hover:bg-black/5 hover:text-sky-500 py-3 rounded-2xl transition font-semibold text-sm group" :title="!isSidebarOpen ? 'ล็อกหน้าจอ' : ''">
+                            <i class="ph ph-lock text-xl group-hover:scale-110 transition-transform"></i>
+                            <span v-show="isSidebarOpen" class="whitespace-nowrap overflow-hidden">ล็อกหน้าจอ</span>
+                        </button>
+                        <button @click="showSettingsModal=true" class="w-full flex items-center justify-center md:justify-start pl-0 md:pl-2 gap-3 theme-text-muted hover:bg-black/5 hover:text-orange-500 py-3 rounded-2xl transition font-semibold text-sm group" :title="!isSidebarOpen ? 'ตั้งค่าระบบ' : ''">
+                            <i class="ph ph-gear-six text-xl group-hover:rotate-90 transition-transform duration-500"></i>
+                            <span v-show="isSidebarOpen" class="whitespace-nowrap overflow-hidden">ตั้งค่าระบบ</span>
+                        </button>
+                        <button @click="handleLogout" class="w-full flex items-center justify-center md:justify-start pl-0 md:pl-2 gap-3 text-rose-500 hover:bg-rose-500/10 py-3 rounded-2xl transition font-semibold text-sm group" :title="!isSidebarOpen ? 'ออกจากระบบ' : ''">
+                            <i class="ph ph-sign-out text-xl group-hover:-translate-x-1 transition-transform"></i>
+                            <span v-show="isSidebarOpen" class="whitespace-nowrap overflow-hidden">ออกจากระบบ</span>
+                        </button>
+                    </div>
+                </aside>
+
+                <!-- Content Area -->
+                <main class="flex-1 relative flex flex-col h-full w-full overflow-y-auto overflow-x-hidden custom-scroll" :class="[theme === 'dark' ? 'bg-slate-900' : (theme === 'eyecare' ? 'bg-[#fbf6ec]' : 'bg-slate-50')]">
+                    <header class="md:hidden h-16 liquid-glass border-b theme-border flex items-center justify-between px-4 z-20 sticky top-0">
+                        <div class="flex items-center gap-2">
+                            <img v-if="systemConfig.logoUrl" :src="systemConfig.logoUrl" class="w-8 h-8 object-contain">
+                            <div v-else class="text-indigo-500 text-xl"><i class="ph ph-flask"></i></div>
+                            <span class="font-bold theme-text pb-0.5 animated-pastel-text">reAgentics</span>
+                        </div>
+                        <button @click="isSidebarOpen = true" class="theme-text-muted hover:theme-text"><i class="ph ph-list text-2xl"></i></button>
+                    </header>
+
+                    <div class="p-4 md:p-6 w-full max-w-[1600px] mx-auto flex-1 flex flex-col gap-4 relative z-10" :class="['dashboard', 'inventory', 'transactions', 'database', 'users'].includes(page) ? 'h-full min-h-0' : ''">
+                        <transition name="slide-fade" mode="out-in">
+                            
+                            <!-- VIEW: DASHBOARD -->
+                            <div v-if="page === 'dashboard'" key="dashboard" class="flex flex-col gap-4 h-full">
+                                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 liquid-glass p-4 rounded-2xl shrink-0">
+                                    <h2 class="text-xl md:text-2xl font-bold theme-text">ภาพรวมระบบ (Dashboard)</h2>
+                                    <div class="flex items-center gap-3 w-full md:w-auto">
+                                        <!-- ตัวกรองกลุ่มงานสำหรับ ADMIN -->
+                                        <select v-if="(user.role || '').toUpperCase() === 'ADMIN'" v-model="filterDashboardGroup" class="input-std focus:ring-2 focus:ring-indigo-400 font-semibold theme-text py-2 px-3 text-sm h-auto rounded-xl flex-1 md:w-48 bg-white/50 border theme-border">
+                                            <option value="All">✦ สถิติทุกกลุ่มงาน</option>
+                                            <option v-for="g in availableUserGroups" :key="'dash-g-'+g" :value="g">{{ g }}</option>
+                                        </select>
+                                        <button @click="fetchData(true)" class="bg-[var(--bg-input)] hover:bg-black/5 text-indigo-600 px-4 py-2 rounded-xl shadow-sm transition flex items-center justify-center gap-2 text-sm font-semibold border theme-border min-w-[100px]">
+                                            <i class="ph ph-arrows-clockwise text-lg inline-block origin-center" :class="{'animate-spin': isSpinning}"></i> อัปเดต
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div class="liquid-glass p-5 rounded-[1.25rem] relative overflow-hidden group hover:-translate-y-1 transition border-l-4 border-l-violet-400">
+                                        <div class="relative z-10"><p class="theme-text-muted text-[11px] font-semibold uppercase tracking-widest mb-0">น้ำยาทั้งหมด (รายการ)</p><h3 class="text-3xl font-mono font-bold text-violet-500 mt-1">{{ stats.total }}</h3></div>
+                                        <i class="ph ph-package absolute right-4 bottom-3 text-4xl text-violet-400 opacity-20 group-hover:opacity-100 group-hover:scale-110 transition-all"></i>
+                                    </div>
+                                    <div class="liquid-glass p-5 rounded-[1.25rem] relative overflow-hidden group hover:-translate-y-1 transition border-l-4 border-l-amber-400">
+                                        <div class="relative z-10"><p class="theme-text-muted text-[11px] font-semibold uppercase tracking-widest mb-0">ใกล้หมดอายุ (จำลอง)</p><h3 class="text-3xl font-mono font-bold text-amber-500 mt-1">{{ stats.expiring }}</h3></div>
+                                        <i class="ph ph-warning-circle absolute right-4 bottom-3 text-4xl text-amber-400 opacity-20 group-hover:opacity-100 group-hover:scale-110 transition-all"></i>
+                                    </div>
+                                    <div class="liquid-glass p-5 rounded-[1.25rem] relative overflow-hidden group hover:-translate-y-1 transition border-l-4 border-l-rose-400">
+                                        <div class="relative z-10"><p class="theme-text-muted text-[11px] font-semibold uppercase tracking-widest mb-0">ยอดคงคลังต่ำกว่าเกณฑ์</p><h3 class="text-3xl font-mono font-bold text-rose-500 mt-1">{{ stats.lowStock }}</h3></div>
+                                        <i class="ph ph-trend-down absolute right-4 bottom-3 text-4xl text-rose-400 opacity-20 group-hover:opacity-100 group-hover:scale-110 transition-all"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- VIEW: INVENTORY -->
+                            <div v-else-if="page === 'inventory'" key="inventory" class="flex flex-col gap-4 h-full overflow-hidden">
+                                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 liquid-glass p-4 rounded-2xl shrink-0">
+                                    <h2 class="text-xl md:text-2xl font-bold theme-text">ทะเบียนน้ำยา</h2>
+                                    <button v-if="(user.role || '').toUpperCase() === 'ADMIN' || (user.role || '').toUpperCase() === 'MANAGER'" @click="openItemModal('create')" class="bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 transition hover:-translate-y-0.5 transform">
+                                        <i class="ph ph-plus-circle text-lg"></i> ลงทะเบียนน้ำยาใหม่
+                                    </button>
+                                </div>
+                                <div class="liquid-glass rounded-3xl flex flex-col flex-1 min-h-[400px] overflow-hidden">
+                                    <div class="py-3 px-4 border-b theme-border bg-black/5 flex flex-wrap gap-3 shrink-0 items-center">
+                                        <!-- ตัวกรองกลุ่มงานสำหรับ ADMIN -->
+                                        <select v-if="(user.role || '').toUpperCase() === 'ADMIN'" v-model="filterGroup" class="input-std font-semibold theme-text max-w-[160px] focus:ring-2 focus:ring-emerald-400 text-sm">
+                                            <option value="All">✦ ทุกกลุ่มงาน</option>
+                                            <option v-for="g in availableGroupsForUser" :key="'f-g-'+g" :value="g">{{ g }}</option>
+                                        </select>
+                                        <select v-model="filterUnit" class="input-std font-semibold theme-text max-w-[180px] focus:ring-2 focus:ring-emerald-400 text-sm">
+                                            <option value="All">✦ ทุกหน่วยงาน</option>
+                                            <option v-for="u in availableUnitsForFilter" :key="'f-'+u" :value="u">{{ u }}</option>
+                                        </select>
+                                        <div class="relative flex-1 max-w-sm">
+                                            <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg"></i>
+                                            <input v-model="filterSearch" type="text" placeholder="ค้นหาชื่อน้ำยา / รหัส" class="input-std pl-10 focus:ring-2 focus:ring-emerald-400">
+                                        </div>
+                                        <button @click="fetchData(true)" class="ml-auto bg-[var(--bg-input)] hover:bg-black/5 text-slate-600 w-10 h-10 flex items-center justify-center rounded-xl shadow-sm transition border theme-border" title="โหลดข้อมูลใหม่">
+                                            <i class="ph ph-arrows-clockwise text-lg inline-block origin-center" :class="{'animate-spin': isSpinning}"></i>
+                                        </button>
+                                    </div>
+                                    <div class="overflow-x-auto overflow-y-auto flex-1 custom-scroll relative bg-black/5">
+                                        <table class="w-full text-left border-collapse table-fixed min-w-[800px]" id="inventory-table">
+                                            <thead class="text-[14px] uppercase border-b theme-border font-bold sticky top-0 bg-[var(--bg-card)] z-10 shadow-sm">
+                                                <tr>
+                                                    <th class="w-[30%] px-4 py-3 theme-text">รหัส/ชื่อน้ำยา</th>
+                                                    <th class="w-[15%] px-4 py-3 text-center theme-text">ยอดคงเหลือ</th>
+                                                    <th class="w-[10%] px-4 py-3 text-center theme-text">หน่วยนับ</th>
+                                                    <th class="w-[10%] px-4 py-3 text-center theme-text">Min</th>
+                                                    <th class="w-[15%] px-4 py-3 text-center theme-text">สถานะ</th>
+                                                    <th class="w-[20%] px-4 py-3 text-center theme-text">จัดการ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody v-if="isDataLoading"><tr v-for="n in 5" :key="'load-'+n"><td colspan="6" class="px-5 py-3 border-b theme-border"><div class="h-4 bg-black/10 rounded-full animate-pulse"></div></td></tr></tbody>
+                                            <tbody v-else>
+                                                <tr v-for="item in filteredInventory" :key="item.itemID" class="theme-row-hover relative z-0" :class="{'opacity-60 bg-slate-100/50': item.status === 'Suspended'}">
+                                                    <td class="px-4 py-2.5">
+                                                        <div class="flex items-center gap-3 relative group">
+                                                            <!-- Thumbnail -->
+                                                            <div v-if="item.image" @click="openImageViewer(item.image)" class="w-10 h-10 rounded-lg border theme-border overflow-hidden bg-white shrink-0 cursor-pointer hover:scale-110 transition-transform shadow-sm relative z-10" title="คลิกเพื่อขยายรูปภาพ">
+                                                                <img :src="item.image" class="w-full h-full object-cover">
+                                                            </div>
+                                                            <div v-else class="w-10 h-10 rounded-lg border theme-border flex items-center justify-center bg-slate-50 shrink-0 text-slate-300">
+                                                                <i class="ph ph-flask text-xl"></i>
+                                                            </div>
+                                                            <div class="overflow-hidden">
+                                                                <div class="font-bold theme-text text-[15px] truncate">{{ item.itemName }}</div>
+                                                                <div class="text-[12px] theme-text-muted font-mono mt-0.5">{{ item.itemID }} <span v-if="item.unitID" class="ml-2 px-1.5 py-0.5 bg-black/5 rounded text-[10px] font-sans">{{ item.unitID }}</span></div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-4 py-2.5 font-bold font-mono text-center text-xl" :class="getStockColorClass(item)">{{ item.balance }}</td>
+                                                    <td class="px-4 py-2.5 text-center font-semibold theme-text-muted text-[13px] uppercase">{{ item.unit }}</td>
+                                                    <td class="px-4 py-2.5 text-center theme-text-muted font-mono text-[14px]">{{ item.minLevel }}</td>
+                                                    <td class="px-4 py-2.5 text-center">
+                                                        <span :class="getStatusBadgeClass(item)" class="px-3 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-widest whitespace-nowrap inline-flex items-center shadow-sm">
+                                                            <i :class="getStatusIconClass(item)" class="mr-1"></i>{{ getStatusText(item) }}
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-4 py-2.5 text-center">
+                                                        <div class="flex items-center justify-center gap-2">
+                                                            <button v-if="canEditItem(item)" @click="openItemModal('edit', item)" class="w-8 h-8 rounded-lg bg-sky-50 text-sky-500 border border-sky-100 hover:bg-sky-500 hover:text-white transition flex items-center justify-center shadow-sm" title="แก้ไขข้อมูล"><i class="ph ph-pencil-simple text-lg"></i></button>
+                                                            <button @click="openPrintModal(item)" class="w-8 h-8 rounded-lg bg-pink-50 text-pink-500 border border-pink-100 hover:bg-pink-500 hover:text-white transition flex items-center justify-center shadow-sm" title="พิมพ์บาร์โค้ด"><i class="ph ph-printer text-lg"></i></button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                <tr v-if="filteredInventory.length === 0 && !isDataLoading"><td colspan="6" class="text-center py-10"><i class="ph ph-folder-open text-4xl theme-text-muted block mb-2 opacity-50"></i><span class="theme-text-muted font-medium text-sm">ไม่พบข้อมูล</span></td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- VIEW: TRANSACTIONS -->
+                            <div v-else-if="page === 'transactions'" key="transactions" class="flex flex-col gap-4 h-full">
+                                <transition name="slide-fade" mode="out-in">
+                                    <!-- Select Transaction Mode -->
+                                    <div v-if="transactionMode === ''" class="flex-1 flex flex-col items-center justify-start pt-10 md:pt-16 animate-slide-up">
+                                        <h2 class="text-2xl md:text-3xl font-bold theme-text mb-8 text-center">เลือกทำรายการ</h2>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl w-full">
+                                            <button @click="setTransactionMode('receive')" class="liquid-glass hover:border-sky-400 border-2 border-transparent shadow-md rounded-[2rem] p-10 flex flex-col items-center justify-center gap-4 transition-all group hover:-translate-y-1">
+                                                <div class="w-24 h-24 rounded-full bg-sky-500/10 text-sky-500 flex items-center justify-center text-5xl group-hover:scale-110 transition-transform"><i class="ph ph-package"></i></div>
+                                                <div class="text-center"><h3 class="text-2xl font-bold theme-text mb-1">รับน้ำยาเข้า</h3><p class="text-sm theme-text-muted font-medium">บันทึกล็อตใหม่ (Receive)</p></div>
+                                            </button>
+                                            <button @click="setTransactionMode('dispense')" class="liquid-glass hover:border-amber-500 border-2 border-transparent shadow-md rounded-[2rem] p-10 flex flex-col items-center justify-center gap-4 transition-all group hover:-translate-y-1">
+                                                <div class="w-24 h-24 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center text-5xl group-hover:scale-110 transition-transform"><i class="ph ph-barcode"></i></div>
+                                                <div class="text-center"><h3 class="text-2xl font-bold theme-text mb-1">เบิกน้ำยาออก</h3><p class="text-sm theme-text-muted font-medium">สแกนบาร์โค้ดตัดยอด (Dispense)</p></div>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Receive Mode -->
+                                    <div v-else-if="transactionMode === 'receive'" class="liquid-glass rounded-3xl overflow-hidden shadow-md max-w-5xl mx-auto w-full animate-slide-up flex flex-col max-h-full">
+                                        <div class="p-5 border-b theme-border flex justify-between items-center bg-sky-500/5 shrink-0">
+                                            <div class="flex items-center gap-3">
+                                                <button @click="cancelTransaction" class="w-10 h-10 rounded-full bg-black/5 hover:bg-sky-100 hover:text-sky-600 text-slate-500 flex items-center justify-center transition-colors"><i class="ph ph-arrow-left text-xl"></i></button>
+                                                <div class="w-10 h-10 rounded-full bg-sky-500/20 text-sky-600 flex items-center justify-center text-xl"><i class="ph ph-package"></i></div>
+                                                <h2 class="text-xl font-bold theme-text">บันทึกรับน้ำยาเข้าคลัง</h2>
+                                            </div>
+                                        </div>
+                                        <div class="p-5 flex-1 flex flex-col overflow-hidden">
+                                            <form @submit.prevent="addReceiveItem" class="grid grid-cols-1 md:grid-cols-12 gap-4 mb-6 bg-[var(--bg-input)] p-4 rounded-2xl border theme-border shrink-0">
+                                                
+                                                <div class="md:col-span-3" v-if="(user.role || '').toUpperCase() === 'ADMIN'">
+                                                    <label class="label-sm">กรองกลุ่มงาน</label>
+                                                    <select v-model="transactionFilterGroup" @change="transactionFilterUnit = ''; formReceive.itemStr = ''" class="input-std focus:ring-2 focus:ring-sky-400 font-semibold theme-text">
+                                                        <option value="" disabled>-- เลือกกลุ่มงาน --</option>
+                                                        <option v-for="g in availableGroupsForUser" :key="'trg-'+g" :value="g">{{ g }}</option>
+                                                    </select>
+                                                </div>
+                                                <div :class="(user.role || '').toUpperCase() === 'ADMIN' ? 'md:col-span-3' : 'md:col-span-6'">
+                                                    <label class="label-sm">กรองหน่วยงาน</label>
+                                                    <select v-model="transactionFilterUnit" @change="formReceive.itemStr = ''" class="input-std focus:ring-2 focus:ring-sky-400 font-semibold theme-text" :disabled="(user.role || '').toUpperCase() === 'ADMIN' && !transactionFilterGroup">
+                                                        <option value="" disabled>-- เลือกหน่วยงาน --</option>
+                                                        <option v-for="u in availableUnitsForTransaction" :key="'tru-'+u" :value="u">{{ u }}</option>
+                                                    </select>
+                                                </div>
+                                                
+                                                <!-- Image Preview added here -->
+                                                <div class="md:col-span-6 flex items-end gap-3">
+                                                    <div v-if="selectedReceiveItemImage" @click="openImageViewer(selectedReceiveItemImage)" class="w-[42px] h-[42px] mb-0.5 rounded-xl border border-slate-200 overflow-hidden bg-white shrink-0 shadow-sm cursor-pointer hover:scale-105 transition-transform" title="คลิกเพื่อขยายรูปภาพ">
+                                                        <img :src="selectedReceiveItemImage" class="w-full h-full object-cover">
+                                                    </div>
+                                                    <div class="flex-1">
+                                                        <label class="label-sm">รายการน้ำยา</label>
+                                                        <select v-model="formReceive.itemStr" required class="input-std focus:ring-2 focus:ring-sky-400 font-semibold theme-text" :disabled="!transactionFilterUnit">
+                                                            <option value="" disabled>-- {{ transactionFilterUnit ? 'เลือกน้ำยา' : 'กรุณาเลือกหน่วยงานก่อน' }} --</option>
+                                                            <option v-for="opt in filteredItemOptions" :key="opt.valStr" :value="opt.valStr">{{ opt.displayText }}</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <div class="md:col-span-4 mt-2">
+                                                    <label class="label-sm">Lot No.</label>
+                                                    <input v-model="formReceive.lot" type="text" required class="input-std focus:ring-2 focus:ring-sky-400 uppercase font-mono font-bold text-sky-600" placeholder="ระบุเลข Lot">
+                                                </div>
+                                                <div class="md:col-span-4 mt-2">
+                                                    <label class="label-sm">EXP. Date</label>
+                                                    <input v-model="formReceive.exp" type="date" required class="input-std focus:ring-2 focus:ring-sky-400 font-mono font-bold theme-text">
+                                                </div>
+                                                <div class="md:col-span-4 flex items-end gap-2 mt-2">
+                                                    <div class="flex-1"><label class="label-sm">จำนวนรับ</label><input v-model.number="formReceive.qty" type="number" required min="1" class="input-std focus:ring-2 focus:ring-sky-400 text-center font-mono font-bold text-lg"></div>
+                                                    <button type="submit" class="bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl px-4 flex items-center justify-center shadow-sm transition-colors h-[38px] w-[50px]"><i class="ph ph-plus font-bold text-xl"></i></button>
+                                                </div>
+                                            </form>
+
+                                            <div class="border theme-border rounded-2xl flex-1 overflow-y-auto bg-[var(--bg-card)] custom-scroll shadow-inner">
+                                                <table class="w-full text-left text-[14px]">
+                                                    <thead class="bg-black/5 border-b theme-border text-slate-500 font-bold uppercase tracking-wider sticky top-0 text-[13px] z-10 backdrop-blur-md">
+                                                        <tr>
+                                                            <th class="py-3 px-4 w-[30%]">รายการน้ำยา</th>
+                                                            <th class="py-3 px-4 w-[15%]">Lot No.</th>
+                                                            <th class="py-3 px-4 w-[15%]">EXP. Date</th>
+                                                            <th class="py-3 px-4 text-center w-[15%]">อุณหภูมิพัสดุ (°C)</th>
+                                                            <th class="py-3 px-4 text-center w-[15%]">จำนวน</th>
+                                                            <th class="py-3 px-4 text-center w-[10%]"><i class="ph ph-trash"></i></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="theme-text font-medium relative z-0">
+                                                        <tr v-if="receiveStaging.length === 0"><td colspan="6" class="text-center py-8 theme-text-muted">ยังไม่มีรายการในตะกร้า</td></tr>
+                                                        <tr v-for="item in receiveStaging" :key="item.uniqueId" class="border-b theme-border theme-row-hover transition-colors">
+                                                            <td class="py-3 px-4">
+                                                                <div class="flex items-center gap-2">
+                                                                    <div v-if="item.image" @click="openImageViewer(item.image)" class="w-8 h-8 rounded border border-slate-200 overflow-hidden bg-white shrink-0 cursor-pointer hover:scale-110 transition-transform" title="คลิกเพื่อขยายรูปภาพ"><img :src="item.image" class="w-full h-full object-cover"></div>
+                                                                    <div>
+                                                                        <div class="font-bold theme-text text-[15px] truncate max-w-[200px]">{{ item.itemName }}</div>
+                                                                        <div class="text-[12px] theme-text-muted">{{ item.itemID }}</div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td class="py-3 px-4 font-mono font-bold text-sky-600 text-[13px]">{{ item.lot }}</td>
+                                                            <td class="py-3 px-4 font-mono text-[13px] font-medium theme-text">{{ formatDateThai(item.exp) }}</td>
+                                                            <td class="py-3 px-4 text-center">
+                                                                <input v-model.number="item.transportTemp" type="number" step="0.01" required class="input-std focus:ring-2 focus:ring-sky-400 text-center font-mono font-bold text-sky-600 py-1 h-8 text-[13px] w-24 mx-auto" placeholder="°C">
+                                                            </td>
+                                                            <td class="py-3 px-4 text-center font-mono font-bold text-sky-600 text-xl">{{ item.qty }} <span class="text-[11px] theme-text-muted font-bold uppercase tracking-widest font-sans">{{ item.unit }}</span></td>
+                                                            <td class="py-3 px-4 text-center"><button @click.prevent="removeStagingItem(item.uniqueId)" class="text-slate-400 hover:text-rose-500 transition-colors w-8 h-8 rounded-lg hover:bg-rose-100 flex items-center justify-center mx-auto"><i class="ph ph-trash text-xl"></i></button></td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+
+                                            <div class="bg-sky-50/50 border theme-border rounded-2xl p-4 mt-4 shrink-0 shadow-sm">
+                                                <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                                                    <div class="md:col-span-3">
+                                                        <label class="label-sm font-bold text-sky-700">ความเร็วในการขนส่ง <span class="text-rose-500">*</span></label>
+                                                        <select v-model="transactionTransportSpeed" required class="input-std focus:ring-2 focus:ring-sky-400 font-bold text-sky-600 bg-white">
+                                                            <option value="" disabled>-- เลือกความเร็ว --</option>
+                                                            <option value="รวดเร็ว">รวดเร็ว</option>
+                                                            <option value="ปกติ">ปกติ</option>
+                                                            <option value="ล่าช้า">ล่าช้า</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="md:col-span-5">
+                                                        <label class="label-sm font-bold text-sky-700">ใบนำส่ง (ถ้ามี - PDF)</label>
+                                                        <input type="file" accept="application/pdf" @change="handleDeliveryNoteUpload" class="block w-full text-sm text-slate-500 file:mr-4 file:py-1.5 file:px-4 file:rounded-xl file:border-0 file:text-[13px] file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 transition border border-slate-200 rounded-xl bg-white h-[38px] cursor-pointer" :disabled="!transactionFilterUnit">
+                                                        <div v-if="deliveryNoteFileName" class="text-[11px] text-emerald-600 font-bold mt-1.5 truncate flex items-center gap-1"><i class="ph ph-check-circle"></i> ไฟล์: {{ deliveryNoteFileName }} <button type="button" @click="removeDeliveryNote" class="text-rose-500 hover:underline ml-2">ลบ</button></div>
+                                                        <div v-else-if="!transactionFilterUnit" class="text-[11px] text-rose-500 font-bold mt-1.5">* กรุณาเลือกหน่วยงานด้านบนก่อนแนบไฟล์</div>
+                                                    </div>
+                                                    <div class="md:col-span-4 flex justify-end">
+                                                        <button @click="submitReceive" :disabled="receiveStaging.length === 0 || !transactionTransportSpeed" class="px-6 py-3 rounded-xl text-[14px] font-bold text-white bg-gradient-to-r from-sky-400 to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 flex items-center justify-center gap-2 w-full"><i class="ph ph-printer text-lg"></i> บันทึกและพิมพ์บาร์โค้ด</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                        </div>
+                                    </div>
+
+                                    <!-- Dispense Mode -->
+                                    <div v-else-if="transactionMode === 'dispense'" class="liquid-glass rounded-3xl overflow-hidden shadow-md max-w-4xl mx-auto w-full animate-slide-up">
+                                        <div class="p-5 border-b theme-border flex justify-between items-center bg-amber-500/5">
+                                            <div class="flex items-center gap-3">
+                                                <button @click="cancelTransaction" class="w-10 h-10 rounded-full bg-black/5 hover:bg-amber-100 hover:text-amber-600 text-slate-500 flex items-center justify-center transition-colors"><i class="ph ph-arrow-left text-xl"></i></button>
+                                                <div class="w-10 h-10 rounded-full bg-amber-500/20 text-amber-600 flex items-center justify-center text-xl"><i class="ph ph-barcode"></i></div>
+                                                <h2 class="text-xl font-bold theme-text">เบิกน้ำยาออก (ตัดยอด)</h2>
+                                            </div>
+                                        </div>
+                                        <div class="p-6">
+                                            <div class="mb-6 p-8 rounded-2xl border-2 border-dashed theme-border text-center relative" style="background-color: var(--bg-input);">
+                                                <label class="block text-sm font-bold theme-text-muted mb-4 flex items-center justify-center gap-2"><i class="ph ph-barcode text-2xl text-amber-500"></i> ยิงสแกนบาร์โค้ดที่นี่</label>
+                                                <input v-model="formDispense.barcodeInput" @keypress="handleBarcodeScan" type="text" class="input-barcode-theme w-full max-w-sm mx-auto border-2 rounded-xl px-4 py-4 text-center text-2xl outline-none focus:ring-4 focus:ring-amber-500/20 font-mono font-bold text-amber-600 tracking-wider shadow-inner" placeholder="ItemID-Lot" autocomplete="off">
+                                            </div>
+                                            <form @submit.prevent="submitManualDispense" class="grid grid-cols-1 md:grid-cols-12 gap-4 pt-6 border-t theme-border relative">
+                                                <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-[var(--bg-card)] px-3 text-[10px] font-bold theme-text-muted uppercase tracking-widest border border-slate-200 rounded-full">Manual Search</div>
+                                                
+                                                <div class="md:col-span-3" v-if="(user.role || '').toUpperCase() === 'ADMIN'">
+                                                    <label class="label-sm">กรองกลุ่มงาน</label>
+                                                    <select v-model="transactionFilterGroup" @change="transactionFilterUnit = ''; formDispense.itemStr = ''" class="input-std focus:ring-2 focus:ring-amber-400 font-semibold theme-text">
+                                                        <option value="" disabled>-- เลือกกลุ่มงาน --</option>
+                                                        <option v-for="g in availableGroupsForUser" :key="'tdg-'+g" :value="g">{{ g }}</option>
+                                                    </select>
+                                                </div>
+                                                <div :class="(user.role || '').toUpperCase() === 'ADMIN' ? 'md:col-span-3' : 'md:col-span-6'">
+                                                    <label class="label-sm">กรองหน่วยงาน</label>
+                                                    <select v-model="transactionFilterUnit" @change="formDispense.itemStr = ''" class="input-std focus:ring-2 focus:ring-amber-400 font-semibold theme-text" :disabled="(user.role || '').toUpperCase() === 'ADMIN' && !transactionFilterGroup">
+                                                        <option value="" disabled>-- เลือกหน่วยงาน --</option>
+                                                        <option v-for="u in availableUnitsForTransaction" :key="'tdu-'+u" :value="u">{{ u }}</option>
+                                                    </select>
+                                                </div>
+                                                
+                                                <!-- Image Preview added here -->
+                                                <div class="md:col-span-6 flex items-end gap-3">
+                                                    <div v-if="selectedDispenseItemImage" @click="openImageViewer(selectedDispenseItemImage)" class="w-[42px] h-[42px] mb-0.5 rounded-xl border border-slate-200 overflow-hidden bg-white shrink-0 shadow-sm cursor-pointer hover:scale-105 transition-transform" title="คลิกเพื่อขยายรูปภาพ">
+                                                        <img :src="selectedDispenseItemImage" class="w-full h-full object-cover">
+                                                    </div>
+                                                    <div class="flex-1">
+                                                        <label class="label-sm">เลือกน้ำยาคงคลัง</label>
+                                                        <select v-model="formDispense.itemStr" required class="input-std focus:ring-2 focus:ring-amber-400 font-semibold theme-text" :disabled="!transactionFilterUnit">
+                                                            <option value="" disabled>-- {{ transactionFilterUnit ? 'เลือกรายการที่มีในคลัง' : 'กรุณาเลือกหน่วยงานก่อน' }} --</option>
+                                                            <option v-for="opt in filteredItemOptions" :key="'m-'+opt.valStr" :value="opt.valStr">{{ opt.displayText }}</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="md:col-span-6 relative mt-2">
+                                                    <label class="label-sm">Lot No.</label>
+                                                    <select v-model="formDispense.lot" required class="input-std focus:ring-2 focus:ring-amber-400 uppercase font-mono font-bold text-amber-600" :disabled="isDispenseLotsLoading || availableDispenseLots.length === 0 || !formDispense.itemStr">
+                                                        <option value="" disabled>-- {{ isDispenseLotsLoading ? 'กำลังโหลด...' : (availableDispenseLots.length === 0 ? 'ยังไม่เลือกน้ำยา หรือ ไม่มี Lot ในคลัง' : 'เลือก Lot') }} --</option>
+                                                        <option v-for="lot in availableDispenseLots" :key="lot.lot" :value="lot.lot">{{ lot.lot }} (เหลือ {{ lot.qty }})</option>
+                                                    </select>
+                                                    <div v-if="isDispenseLotsLoading" class="absolute right-8 top-[34px] flex items-center justify-center">
+                                                        <i class="ph ph-spinner-gap animate-spin text-amber-500"></i>
+                                                    </div>
+                                                </div>
+
+                                                <div class="md:col-span-6 flex items-end gap-2 mt-2">
+                                                    <div class="flex-1"><label class="label-sm">เบิกจำนวน</label><input v-model.number="formDispense.qty" type="number" min="1" :max="maxDispenseQty" required class="input-std focus:ring-2 focus:ring-amber-400 text-center font-mono font-bold text-lg"></div>
+                                                    <button type="submit" class="bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white rounded-xl px-4 md:px-6 font-bold shadow-md transition-all h-[38px] flex items-center justify-center gap-2 text-[14px]" :disabled="!formDispense.lot"><i class="ph ph-check-circle text-lg"></i> ตัดยอด</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </transition>
+                            </div>
+
+                            <!-- VIEW: DATABASE SETTINGS -->
+                            <div v-else-if="page === 'database'" key="database" class="flex flex-col gap-4 h-full overflow-hidden">
+                                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 liquid-glass p-4 rounded-2xl shrink-0">
+                                    <div class="flex items-center gap-3">
+                                        <button @click="backToSettings" class="w-10 h-10 rounded-full bg-black/5 hover:bg-indigo-100 hover:text-indigo-600 text-slate-500 flex items-center justify-center transition-colors" title="กลับหน้าตั้งค่า"><i class="ph ph-arrow-left text-xl"></i></button>
+                                        <div class="w-10 h-10 rounded-full bg-indigo-500/20 text-indigo-600 flex items-center justify-center text-xl"><i class="ph ph-hard-drives"></i></div>
+                                        <h2 class="text-xl md:text-2xl font-bold theme-text">ตั้งค่าการเชื่อมต่อฐานข้อมูล</h2>
+                                    </div>
+                                    <button @click="saveCoreDbConfig" class="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-6 py-2 rounded-xl text-sm font-semibold shadow-sm flex items-center gap-2 transition hover:-translate-y-0.5 transform">
+                                        <i class="ph ph-floppy-disk text-lg"></i> บันทึกการตั้งค่าทั้งหมด
+                                    </button>
+                                </div>
+
+                                <div class="liquid-glass rounded-3xl flex flex-col flex-1 min-h-[400px] overflow-hidden">
+                                    <!-- 5 Tabs Menu -->
+                                    <div class="flex overflow-x-auto border-b theme-border px-4 pt-3 bg-black/5 sticky top-0 z-10 custom-scroll gap-2 shrink-0">
+                                        <button @click="dbModalTab = 'core'" :class="dbModalTab === 'core' ? 'border-indigo-500 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'" class="px-5 py-3 font-bold text-[14px] border-b-[3px] whitespace-nowrap transition-colors rounded-t-xl"><i class="ph ph-link text-lg align-middle mb-0.5"></i> ฐานข้อมูลหลัก</button>
+                                        <button @click="dbModalTab = 'years'" :class="dbModalTab === 'years' ? 'border-emerald-500 text-emerald-600 bg-emerald-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'" class="px-5 py-3 font-bold text-[14px] border-b-[3px] whitespace-nowrap transition-colors rounded-t-xl"><i class="ph ph-files text-lg align-middle mb-0.5"></i> ไฟล์ข้อมูลรายปี (Transactions)</button>
+                                        <button @click="dbModalTab = 'unit_folders'" :class="dbModalTab === 'unit_folders' ? 'border-sky-500 text-sky-600 bg-sky-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'" class="px-5 py-3 font-bold text-[14px] border-b-[3px] whitespace-nowrap transition-colors rounded-t-xl"><i class="ph ph-folder-open text-lg align-middle mb-0.5"></i> โฟลเดอร์เก็บภาพน้ำยา</button>
+                                        <button @click="dbModalTab = 'delivery_folders'" :class="dbModalTab === 'delivery_folders' ? 'border-amber-500 text-amber-600 bg-amber-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'" class="px-5 py-3 font-bold text-[14px] border-b-[3px] whitespace-nowrap transition-colors rounded-t-xl"><i class="ph ph-file-pdf text-lg align-middle mb-0.5"></i> โฟลเดอร์เก็บใบนำส่งน้ำยา</button>
+                                        <button @click="dbModalTab = 'system_folders'" :class="dbModalTab === 'system_folders' ? 'border-purple-500 text-purple-600 bg-purple-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'" class="px-5 py-3 font-bold text-[14px] border-b-[3px] whitespace-nowrap transition-colors rounded-t-xl"><i class="ph ph-image text-lg align-middle mb-0.5"></i> โฟลเดอร์โปรไฟล์และโลโก้</button>
+                                    </div>
+                                    
+                                    <div class="flex-1 w-full overflow-y-auto custom-scroll bg-slate-50/50 flex flex-col p-4 md:p-6 relative">
+                                        <!-- Global Spinner for ALL Tabs (Center of the screen) -->
+                                        <div v-if="isDbConfigLoading" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/80 backdrop-blur-sm z-20">
+                                            <i class="ph ph-spinner-gap animate-spin text-5xl text-indigo-500 mb-4 inline-block origin-center"></i>
+                                            <span class="text-slate-500 font-bold text-[16px]">กำลังโหลดข้อมูลการตั้งค่า...</span>
+                                        </div>
+                                        
+                                        <!-- Tab Contents (centered max-width) -->
+                                        <div class="max-w-5xl mx-auto w-full">
+                                            <!-- TAB 1: Core Databases -->
+                                            <div v-show="dbModalTab === 'core'" class="animate-fade-in">
+                                                <div class="bg-[var(--bg-input)] p-6 rounded-2xl shadow-sm border theme-border mb-2">
+                                                    <h4 class="text-[15px] font-bold text-indigo-600 uppercase tracking-widest mb-6 flex items-center gap-2 pb-3 border-b theme-border border-dashed"><i class="ph ph-database text-xl"></i> ฐานข้อมูลหลัก (Core Databases)</h4>
+                                                    <div class="space-y-5">
+                                                        <div><label class="label-sm text-[13px]">reAgentics_DB (Main ID)</label><input v-model="dbConfig.mainId" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-indigo-400 py-3" placeholder="ใส่ Sheet ID ของ Database หลัก"></div>
+                                                        <div><label class="label-sm text-[13px]">reAgentics_Units (Unit ID)</label><input v-model="dbConfig.unitId" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-indigo-400 py-3" placeholder="ใส่ Sheet ID ของฐานข้อมูลหน่วยงาน"></div>
+                                                        <div><label class="label-sm text-[13px]">reAgentics_User (User ID)</label><input v-model="dbConfig.userId" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-indigo-400 py-3" placeholder="ใส่ Sheet ID ของฐานข้อมูลพนักงาน"></div>
+                                                        <div><label class="label-sm text-[13px]">reAgentics_Config (Config ID)</label><input v-model="dbConfig.configId" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-indigo-400 py-3" placeholder="ใส่ Sheet ID ของฐานข้อมูลตั้งค่าสติ๊กเกอร์/โลโก้"></div>
+                                                        <div><label class="label-sm text-[13px]">reAgentics_Log (Log ID)</label><input v-model="dbConfig.logId" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-indigo-400 py-3" placeholder="ใส่ Sheet ID ของฐานข้อมูลประวัติการใช้งานระบบ"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- TAB 2: Transactions Years -->
+                                            <div v-show="dbModalTab === 'years'" class="animate-fade-in">
+                                                <div class="bg-[var(--bg-input)] p-6 rounded-2xl shadow-sm border theme-border mb-2">
+                                                    <div class="flex flex-wrap justify-between items-center gap-4 mb-4 pb-3 border-b theme-border border-dashed">
+                                                        <h4 class="text-[15px] font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-2"><i class="ph ph-files text-xl"></i> ไฟล์ข้อมูลรายปี (Transactions)</h4>
+                                                        <div class="flex flex-wrap gap-2">
+                                                            <button @click="openManualAddYearModal" class="bg-sky-50 hover:bg-sky-100 text-sky-600 px-4 py-2 rounded-xl border border-sky-200 font-bold text-[13px] flex items-center gap-2 transition-colors shadow-sm">
+                                                                <i class="ph ph-link text-lg"></i> นำเข้าด้วย SheetID
+                                                            </button>
+                                                            <button @click="createNewYearSheet" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-4 py-2 rounded-xl border border-emerald-200 font-bold text-[13px] flex items-center gap-2 transition-colors shadow-sm">
+                                                                <i class="ph ph-plus-circle text-lg"></i> สร้างไฟล์ใหม่อัตโนมัติ
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div class="border theme-border rounded-xl overflow-hidden mt-4">
+                                                        <table class="w-full text-left text-[14px] min-w-[600px]">
+                                                            <thead class="bg-slate-50 border-b theme-border text-slate-500 font-bold">
+                                                                <tr>
+                                                                    <th class="py-3 px-5 w-[15%] whitespace-nowrap">ปี (Year)</th>
+                                                                    <th class="py-3 px-5 w-[45%] whitespace-nowrap">Sheet ID</th>
+                                                                    <th class="py-3 px-5 text-center w-[20%] whitespace-nowrap">สถานะ</th>
+                                                                    <th class="py-3 px-5 text-center w-[20%] whitespace-nowrap">จัดการ</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody class="theme-text font-medium bg-[var(--bg-card)]">
+                                                                <tr v-if="dbConfig.years.length === 0"><td colspan="4" class="text-center py-10 text-slate-400 font-medium">ยังไม่มีการเชื่อมต่อไฟล์รายปี</td></tr>
+                                                                <tr v-for="y in dbConfig.years" :key="y.year" class="border-b theme-border theme-row-hover transition-colors">
+                                                                    <td class="py-4 px-5 font-bold text-emerald-600 whitespace-nowrap text-base">{{ y.year }}</td>
+                                                                    <td class="py-4 px-5 font-mono text-[13px] text-slate-500 truncate max-w-[250px]" :title="y.fileId">{{ y.fileId }}</td>
+                                                                    <td class="py-4 px-5 text-center whitespace-nowrap">
+                                                                        <span v-if="y.status === 'Connected'" class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-[12px] font-bold inline-block border border-emerald-200">เชื่อมต่อแล้ว</span>
+                                                                        <span v-else class="bg-rose-100 text-rose-700 px-3 py-1 rounded-lg text-[12px] font-bold inline-block border border-rose-200">ระงับเชื่อมต่อ</span>
+                                                                    </td>
+                                                                    <td class="py-4 px-5 text-center whitespace-nowrap">
+                                                                        <button v-if="y.status === 'Connected'" @click="disconnectYearSheet(y.year)" class="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-500 transition-colors shadow-sm" title="ระงับการเชื่อมต่อชั่วคราว"><i class="ph ph-link-break text-xl"></i></button>
+                                                                        <button v-else @click="reconnectYearSheet(y.year)" class="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-500 transition-colors shadow-sm" title="เปิดการเชื่อมต่อ"><i class="ph ph-arrows-clockwise text-xl"></i></button>
+                                                                        <button @click="deleteYearSheet(y.year)" class="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-500 transition-colors shadow-sm ml-2" title="ลบรายการถาวร"><i class="ph ph-trash text-xl"></i></button>
+                                                                    </td>
+                                                                </tr>
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- TAB 3: Unit Folders -->
+                                            <div v-show="dbModalTab === 'unit_folders'" class="animate-fade-in">
+                                                <div class="bg-[var(--bg-input)] p-6 rounded-2xl shadow-sm border theme-border mb-2">
+                                                    <h4 class="text-[15px] font-bold text-sky-600 uppercase tracking-widest mb-2 flex items-center gap-2"><i class="ph ph-folder text-xl"></i> โฟลเดอร์เก็บภาพน้ำยา (แยกตามแผนก)</h4>
+                                                    <p class="text-[13px] text-slate-500 mb-6 pb-3 border-b theme-border border-dashed">รายการด้านล่างถูกดึงมาจากไฟล์ `reAgentics_Units` หากต้องการเพิ่มชื่อแผนกให้เพิ่มที่ไฟล์นั้น</p>
+                                                    
+                                                    <div class="space-y-5">
+                                                        <div v-if="!dbConfig.unitFolders || dbConfig.unitFolders.length === 0" class="text-center py-8 text-slate-500 text-[15px] bg-slate-50 rounded-xl border border-dashed border-slate-200">ไม่พบข้อมูลแผนกจากไฟล์ reAgentics_Units</div>
+                                                        <div v-else v-for="(unit, index) in dbConfig.unitFolders" :key="'uf-'+index" class="flex flex-col md:flex-row items-start md:items-center gap-3 pb-4 border-b theme-border border-dashed last:border-0 last:pb-0">
+                                                            <label class="label-sm w-full md:w-1/3 mb-0 text-[14px] text-slate-700 font-bold flex items-center gap-2"><i class="ph ph-folder-open text-sky-500 text-lg"></i> แผนก: {{ unit.name }}</label>
+                                                            <input v-model="unit.folderId" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-sky-400 flex-1 py-3" placeholder="ใส่ Google Drive Folder ID">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- TAB 5: Delivery Note Folders -->
+                                            <div v-show="dbModalTab === 'delivery_folders'" class="animate-fade-in">
+                                                <div class="bg-[var(--bg-input)] p-6 rounded-2xl shadow-sm border theme-border mb-2">
+                                                    <h4 class="text-[15px] font-bold text-amber-600 uppercase tracking-widest mb-2 flex items-center gap-2"><i class="ph ph-file-pdf text-xl"></i> โฟลเดอร์เก็บใบนำส่งน้ำยา (แยกตามแผนก)</h4>
+                                                    <p class="text-[13px] text-slate-500 mb-6 pb-3 border-b theme-border border-dashed">ดึงข้อมูลแผนกจากไฟล์ reAgentics_Units (คอลัมน์ E)</p>
+                                                    
+                                                    <div class="space-y-5">
+                                                        <div v-if="!dbConfig.deliveryNoteFolders || dbConfig.deliveryNoteFolders.length === 0" class="text-center py-8 text-slate-500 text-[15px] bg-slate-50 rounded-xl border border-dashed border-slate-200">ไม่พบข้อมูลแผนกจากไฟล์ reAgentics_Units</div>
+                                                        <div v-else v-for="(unit, index) in dbConfig.deliveryNoteFolders" :key="'del-'+index" class="flex flex-col md:flex-row items-start md:items-center gap-3 pb-4 border-b theme-border border-dashed last:border-0 last:pb-0">
+                                                            <label class="label-sm w-full md:w-1/3 mb-0 text-[14px] text-slate-700 font-bold flex items-center gap-2"><i class="ph ph-folder-open text-amber-500 text-lg"></i> แผนก: {{ unit.name }}</label>
+                                                            <input v-model="unit.folderId" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-amber-400 flex-1 py-3" placeholder="ใส่ Google Drive Folder ID">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- TAB 4: Profile & Logo Folders -->
+                                            <div v-show="dbModalTab === 'system_folders'" class="animate-fade-in">
+                                                <div class="bg-[var(--bg-input)] p-6 rounded-2xl shadow-sm border theme-border mb-2">
+                                                    <h4 class="text-[15px] font-bold text-purple-600 uppercase tracking-widest mb-6 flex items-center gap-2 pb-3 border-b theme-border border-dashed"><i class="ph ph-folder-user text-xl"></i> โฟลเดอร์เก็บภาพโปรไฟล์และโลโก้</h4>
+                                                    <div class="space-y-6">
+                                                        <div class="bg-white/50 p-5 rounded-2xl border border-purple-100 shadow-sm">
+                                                            <label class="label-sm text-[14px] mb-2 flex items-center gap-2"><i class="ph ph-user text-purple-500 text-lg"></i> โฟลเดอร์เก็บภาพโปรไฟล์ (Profile Images)</label>
+                                                            <input v-model="dbConfig.folderProfile" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-purple-400 py-3" placeholder="ใส่ Google Drive Folder ID สำหรับโปรไฟล์พนักงาน">
+                                                        </div>
+                                                        <div class="bg-white/50 p-5 rounded-2xl border border-purple-100 shadow-sm">
+                                                            <label class="label-sm text-[14px] mb-2 flex items-center gap-2"><i class="ph ph-image text-purple-500 text-lg"></i> โฟลเดอร์เก็บภาพโลโก้ (App Logos)</label>
+                                                            <input v-model="dbConfig.folderLogo" type="text" class="input-std font-mono text-[14px] focus:ring-2 focus:ring-purple-400 py-3" placeholder="ใส่ Google Drive Folder ID สำหรับโลโก้ระบบ">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- VIEW: USERS SYSTEM (ADMIN) -->
+                            <div v-else-if="page === 'users'" key="users" class="flex flex-col gap-4 h-full overflow-hidden">
+                                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 liquid-glass p-4 rounded-2xl shrink-0">
+                                    <div class="flex items-center gap-3">
+                                        <button @click="backToSettings" class="w-10 h-10 rounded-full bg-black/5 hover:bg-teal-100 hover:text-teal-600 text-slate-500 flex items-center justify-center transition-colors" title="กลับหน้าตั้งค่า"><i class="ph ph-arrow-left text-xl"></i></button>
+                                        <div class="w-10 h-10 rounded-full bg-teal-500/20 text-teal-600 flex items-center justify-center text-xl"><i class="ph ph-users"></i></div>
+                                        <h2 class="text-xl md:text-2xl font-bold theme-text">ตั้งค่าผู้ใช้งาน (User)</h2>
+                                    </div>
+                                    <button @click="fetchUsersList" class="bg-[var(--bg-input)] hover:bg-black/5 text-teal-600 px-4 py-2 rounded-xl shadow-sm transition flex items-center justify-center gap-2 text-sm font-semibold border theme-border min-w-[100px]">
+                                        <i class="ph ph-arrows-clockwise text-lg inline-block origin-center" :class="{'animate-spin': isUsersLoading}"></i> รีเฟรชข้อมูล
+                                    </button>
+                                </div>
+
+                                <div class="liquid-glass rounded-3xl flex flex-col flex-1 min-h-[400px] overflow-hidden">
+                                    <div class="overflow-x-auto overflow-y-auto flex-1 custom-scroll relative bg-black/5">
+                                        <table class="w-full text-left border-collapse table-fixed min-w-[1000px]">
+                                            <thead class="text-[14px] uppercase border-b theme-border font-bold sticky top-0 bg-[var(--bg-card)] z-10 shadow-sm">
+                                                <tr>
+                                                    <th class="w-[15%] px-4 py-3 theme-text">ชื่อ-สกุล</th>
+                                                    <th class="w-[15%] px-4 py-3 theme-text">UserID</th>
+                                                    <th class="w-[15%] px-4 py-3 theme-text">Email</th>
+                                                    <th class="w-[10%] px-4 py-3 theme-text text-center">กลุ่มงาน</th>
+                                                    <th class="w-[10%] px-4 py-3 theme-text text-center">Role</th>
+                                                    <th class="w-[10%] px-4 py-3 theme-text text-center">UnitID</th>
+                                                    <th class="w-[10%] px-4 py-3 theme-text text-center">OTP</th>
+                                                    <th class="w-[10%] px-4 py-3 theme-text text-center">Status</th>
+                                                    <th class="w-[5%] px-4 py-3 text-center theme-text">จัดการ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody v-if="isUsersLoading">
+                                                <tr v-for="n in 5" :key="'uload-'+n"><td colspan="9" class="px-5 py-3 border-b theme-border"><div class="h-4 bg-black/10 rounded-full animate-pulse"></div></td></tr>
+                                            </tbody>
+                                            <tbody v-else>
+                                                <tr v-for="u in usersList" :key="u.userId" class="theme-row-hover relative z-0 border-b theme-border" :class="{'opacity-60 bg-slate-100/50': u.status === 'ระงับการใช้งาน'}">
+                                                    <td class="px-4 py-3 font-bold theme-text text-[15px] truncate">{{ u.name }}</td>
+                                                    <td class="px-4 py-3 font-mono text-[13px] theme-text-muted">{{ u.userId }}</td>
+                                                    <td class="px-4 py-3 text-[13px] theme-text-muted truncate">{{ u.email }}</td>
+                                                    <td class="px-4 py-3 text-center text-[13px] font-bold text-sky-600">{{ u.group }}</td>
+                                                    <td class="px-4 py-3 text-center">
+                                                        <span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-widest border" :class="getRoleBadgeClass(u.role)">
+                                                            {{ u.role }}
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-4 py-3 text-center font-mono text-[12px] theme-text-muted max-w-[120px] truncate mx-auto" :title="u.unitIdRaw">{{ u.unitIdRaw || '-' }}</td>
+                                                    <td class="px-4 py-3 text-center">
+                                                        <span class="px-2 py-1 rounded-md text-[10px] font-bold uppercase border whitespace-nowrap inline-flex items-center" :class="u.otpStatus === 'OFF' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-sky-50 text-sky-600 border-sky-200'">
+                                                            <i :class="u.otpStatus === 'OFF' ? 'ph ph-shield-slash' : 'ph ph-shield-check'" class="mr-1"></i>{{ u.otpStatus || 'ON' }}
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-4 py-3 text-center">
+                                                        <span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase border whitespace-nowrap inline-flex items-center" :class="u.status === 'ระงับการใช้งาน' ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'">
+                                                            <i :class="u.status === 'ระงับการใช้งาน' ? 'ph ph-warning-circle' : 'ph ph-check-circle'" class="mr-1"></i>{{ u.status }}
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-4 py-3 text-center">
+                                                        <button @click="openEditUserModal(u)" class="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 border border-teal-100 hover:bg-teal-500 hover:text-white transition flex items-center justify-center shadow-sm mx-auto" title="แก้ไขข้อมูลผู้ใช้"><i class="ph ph-wrench text-lg"></i></button>
+                                                    </td>
+                                                </tr>
+                                                <tr v-if="usersList.length === 0 && !isUsersLoading"><td colspan="9" class="text-center py-10 theme-text-muted">ไม่พบข้อมูลผู้ใช้งาน</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </transition>
+                    </div>
+                </main>
+                <div id="sidebar-overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-20 md:hidden transition-opacity" :class="isSidebarOpen ? 'block opacity-100' : 'hidden opacity-0'" @click="isSidebarOpen = false"></div>
+            </div>
+        </transition>
+
+        <!-- 4. HIDDEN MODALS -->
+
+        <!-- Modal: แก้ไขข้อมูลผู้ใช้งาน (Admin) -->
+        <transition name="fade">
+            <div v-if="showEditUserModal" class="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print overflow-y-auto">
+                <div class="liquid-glass rounded-3xl w-full max-w-2xl p-0 overflow-hidden animate-slide-up shadow-2xl my-auto">
+                    <div class="p-5 border-b theme-border flex justify-between items-center bg-teal-500/10 backdrop-blur-md sticky top-0 z-10">
+                        <h3 class="text-lg font-bold theme-text flex items-center gap-2"><i class="ph ph-wrench text-xl text-teal-600"></i> แก้ไขข้อมูลผู้ใช้งาน</h3>
+                        <button @click="showEditUserModal=false" class="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 hover:bg-rose-100 text-slate-400 hover:text-rose-500 text-xl font-bold transition"><i class="ph ph-x"></i></button>
+                    </div>
+                    
+                    <form @submit.prevent="saveUserEdit" class="p-6 space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="label-sm">ชื่อ-สกุล</label>
+                                <input v-model="formUserEdit.name" type="text" required class="input-std focus:ring-2 focus:ring-teal-400 font-bold theme-text">
+                            </div>
+                            <div>
+                                <label class="label-sm">UserID</label>
+                                <input v-model="formUserEdit.userId" type="text" required class="input-std focus:ring-2 focus:ring-teal-400 font-mono font-bold text-teal-600 bg-slate-50">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="label-sm">Email</label>
+                                <input v-model="formUserEdit.email" type="email" required class="input-std focus:ring-2 focus:ring-teal-400 theme-text">
+                            </div>
+                            
+                            <!-- กลุ่มงาน -->
+                            <div>
+                                <label class="label-sm">กลุ่มงาน (Group)</label>
+                                <select v-model="formUserEdit.group" @change="handleUserGroupChange" required class="input-std focus:ring-2 focus:ring-teal-400 font-semibold text-sky-600">
+                                    <option value="" disabled>-- เลือกกลุ่มงาน --</option>
+                                    <option v-for="group in availableUserGroups" :key="group" :value="group">{{ group }}</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Role -->
+                            <div>
+                                <label class="label-sm">สิทธิ์การใช้งาน (Role)</label>
+                                <select v-model="formUserEdit.role" @change="handleUserRoleChange" required class="input-std focus:ring-2 focus:ring-teal-400 font-bold" :class="getRoleTextColorClass(formUserEdit.role)">
+                                    <option value="USER">USER</option>
+                                    <option value="MANAGER">MANAGER</option>
+                                    <option value="ADMIN">ADMIN</option>
+                                </select>
+                            </div>
+
+                            <!-- UnitID Selection -->
+                            <div class="md:col-span-2 p-4 rounded-xl border theme-border transition-colors" :class="formUserEdit.role === 'USER' ? 'bg-slate-100 opacity-60' : 'bg-[var(--bg-input)]'">
+                                <label class="label-sm mb-2">หน่วยงานย่อย (UnitID) - สำหรับรับ/เบิกน้ำยา</label>
+                                
+                                <div v-if="formUserEdit.role === 'ADMIN'" class="p-3 bg-purple-50 text-purple-700 rounded-lg font-bold text-center border border-purple-200">
+                                    <i class="ph ph-shield-star text-lg align-middle mr-1"></i> ADMIN: สามารถเข้าถึงได้ทุกหน่วยงาน (ALL)
+                                </div>
+                                
+                                <div v-else-if="formUserEdit.role === 'USER'" class="p-3 bg-slate-200 text-slate-500 rounded-lg font-medium text-center border border-slate-300">
+                                    <i class="ph ph-lock text-lg align-middle mr-1"></i> USER: จะผูกกับหน่วยงานตาม "กลุ่มงาน" อัตโนมัติ ไม่สามารถระบุเพิ่มได้
+                                </div>
+                                
+                                <div v-else-if="formUserEdit.role === 'MANAGER'">
+                                    <p class="text-[11px] text-orange-600 mb-2 font-semibold">* MANAGER: เลือกหน่วยงานย่อยที่สามารถลงทะเบียนน้ำยาใหม่ได้ (เลือกได้มากกว่า 1)</p>
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                        <div v-if="!availableUnitsForGroup.length" class="col-span-full text-center text-sm text-slate-400 py-2">ไม่มีข้อมูล UnitID สำหรับกลุ่มงานนี้</div>
+                                        <label v-for="u in availableUnitsForGroup" :key="u" class="flex items-center gap-2 p-2 border theme-border rounded-lg bg-white cursor-pointer hover:bg-teal-50 transition-colors">
+                                            <input type="checkbox" :value="u" v-model="formUserEdit.unitIdArr" class="w-4 h-4 text-teal-600 rounded focus:ring-teal-500">
+                                            <span class="text-[13px] font-bold theme-text">{{ u }}</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- OTP Bypass -->
+                        <div class="mt-4 p-4 rounded-xl border transition-colors" :class="formUserEdit.otpStatus === 'OFF' ? 'bg-amber-50 border-amber-200' : 'bg-sky-50 border-sky-200'">
+                            <label class="label-sm mb-2" :class="formUserEdit.otpStatus === 'OFF' ? 'text-amber-700' : 'text-sky-700'">ระบบยืนยันตัวตนด้วยอีเมล (OTP Bypass)</label>
+                            <div class="flex gap-4">
+                                <label class="flex items-center gap-2 cursor-pointer p-2 pr-4 bg-white rounded-lg border shadow-sm transition-all" :class="formUserEdit.otpStatus !== 'OFF' ? 'border-sky-500 ring-2 ring-sky-200' : 'border-slate-200'">
+                                    <input type="radio" v-model="formUserEdit.otpStatus" value="ON" class="w-4 h-4 text-sky-600 focus:ring-sky-500">
+                                    <span class="font-bold text-sky-600"><i class="ph ph-shield-check"></i> ON (เปิดใช้งาน)</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer p-2 pr-4 bg-white rounded-lg border shadow-sm transition-all" :class="formUserEdit.otpStatus === 'OFF' ? 'border-amber-500 ring-2 ring-amber-200' : 'border-slate-200'">
+                                    <input type="radio" v-model="formUserEdit.otpStatus" value="OFF" class="w-4 h-4 text-amber-600 focus:ring-amber-500">
+                                    <span class="font-bold text-amber-600"><i class="ph ph-shield-slash"></i> OFF (ข้ามการยืนยันตัวตน)</span>
+                                </label>
+                            </div>
+                            <p class="text-[11px] mt-2 font-medium" :class="formUserEdit.otpStatus === 'OFF' ? 'text-amber-600' : 'text-sky-600'">* หากตั้งเป็น OFF บัญชีนี้จะล็อกอินด้วย Password อย่างเดียว โดยไม่ต้องขอ OTP</p>
+                        </div>
+
+                        <!-- Status -->
+                        <div class="mt-4 p-4 rounded-xl border transition-colors" :class="formUserEdit.status === 'ระงับการใช้งาน' ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'">
+                            <label class="label-sm mb-2" :class="formUserEdit.status === 'ระงับการใช้งาน' ? 'text-rose-700' : 'text-emerald-700'">สถานะบัญชี (Status)</label>
+                            <div class="flex gap-4">
+                                <label class="flex items-center gap-2 cursor-pointer p-2 pr-4 bg-white rounded-lg border shadow-sm transition-all" :class="formUserEdit.status === 'ปกติ' ? 'border-emerald-500 ring-2 ring-emerald-200' : 'border-slate-200'">
+                                    <input type="radio" v-model="formUserEdit.status" value="ปกติ" class="w-4 h-4 text-emerald-600 focus:ring-emerald-500">
+                                    <span class="font-bold text-emerald-600"><i class="ph ph-check-circle"></i> ปกติ</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer p-2 pr-4 bg-white rounded-lg border shadow-sm transition-all" :class="formUserEdit.status === 'ระงับการใช้งาน' ? 'border-rose-500 ring-2 ring-rose-200' : 'border-slate-200'">
+                                    <input type="radio" v-model="formUserEdit.status" value="ระงับการใช้งาน" class="w-4 h-4 text-rose-600 focus:ring-rose-500">
+                                    <span class="font-bold text-rose-600"><i class="ph ph-warning-circle"></i> ระงับการใช้งาน</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-3 pt-4 border-t theme-border mt-4">
+                            <button type="button" @click="showEditUserModal=false" class="px-5 py-2.5 rounded-xl theme-text-muted hover:bg-black/5 transition font-bold text-sm">ยกเลิก</button>
+                            <button type="submit" :disabled="isSavingUser" class="flex items-center gap-2 text-white px-8 py-2.5 rounded-xl font-bold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 text-sm disabled:opacity-50 bg-gradient-to-r from-teal-500 to-emerald-600">
+                                <i class="ph ph-floppy-disk text-lg"></i> <span v-if="isSavingUser">กำลังบันทึก...</span><span v-else>บันทึกการแก้ไข</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Modal: ลงทะเบียน/แก้ไขน้ำยาใหม่ (มีปุ่มอัปโหลดรูปภาพ) -->
+        <transition name="fade">
+            <div v-if="showItemModal" class="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print overflow-y-auto">
+                <div class="liquid-glass rounded-3xl w-full max-w-2xl p-0 overflow-hidden animate-slide-up shadow-2xl my-auto">
+                    <div class="p-5 border-b theme-border flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-10" :class="itemModalMode === 'create' ? 'bg-emerald-500/10' : 'bg-sky-500/10'">
+                        <h3 class="text-lg font-bold theme-text flex items-center gap-2">
+                            <i v-if="itemModalMode === 'create'" class="ph ph-plus-circle text-xl text-emerald-500"></i>
+                            <i v-else class="ph ph-pencil-simple text-xl text-sky-500"></i>
+                            {{ itemModalMode === 'create' ? 'ลงทะเบียนน้ำยาใหม่' : 'จัดการข้อมูลน้ำยา' }}
+                        </h3>
+                        <button @click="closeItemModal" class="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 hover:bg-rose-100 text-slate-400 hover:text-rose-500 text-xl font-bold transition"><i class="ph ph-x"></i></button>
+                    </div>
+                    
+                    <form @submit.prevent="saveItemData" class="p-6 space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Image Upload Section -->
+                            <div class="col-span-1 md:col-span-2 flex items-center gap-4 p-4 border theme-border rounded-xl bg-slate-50/50">
+                                <label class="w-24 h-24 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center bg-white cursor-pointer hover:bg-slate-50 transition relative overflow-hidden group shadow-sm">
+                                    <img v-if="formItem.imagePreview" :src="formItem.imagePreview" class="w-full h-full object-cover">
+                                    <i v-else class="ph ph-image text-4xl text-slate-300"></i>
+                                    <div class="absolute inset-0 bg-black/50 hidden group-hover:flex flex-col items-center justify-center text-white text-xs font-bold backdrop-blur-sm transition-all"><i class="ph ph-camera text-xl mb-1"></i>อัปโหลด</div>
+                                    <input type="file" accept="image/*" @change="handleItemImageUpload" class="hidden">
+                                </label>
+                                <div class="flex-1">
+                                    <h4 class="font-bold theme-text text-[14px] mb-1">ภาพน้ำยา (Reagent Image)</h4>
+                                    <p class="text-[11px] theme-text-muted leading-tight">รองรับ PNG, JPG, GIF ขนาดไม่เกิน 5MB<br>รูปภาพจะถูกบันทึกลงโฟลเดอร์ของหน่วยงานอัตโนมัติ</p>
+                                    <button v-if="formItem.imagePreview" type="button" @click="formItem.imagePreview = ''; formItem.image = ''; formItem.imageChanged = true" class="text-rose-500 text-[11px] font-bold mt-2 hover:underline inline-flex items-center gap-1"><i class="ph ph-trash"></i> นำรูปออก</button>
+                                </div>
+                            </div>
+
+                            <!-- 1.1 กลุ่มงาน และ หน่วยงาน -->
+                            <div v-if="(user.role || '').toUpperCase() === 'ADMIN'">
+                                <label class="label-sm">กลุ่มงาน (Group)</label>
+                                <select v-model="formItem.group" @change="formItem.unitID = ''; generateAutoId()" required class="input-std focus:ring-2 focus:ring-emerald-400 font-semibold text-sky-600">
+                                    <option value="" disabled>-- เลือกกลุ่มงาน --</option>
+                                    <option v-for="group in availableGroupsForUser" :key="group" :value="group">{{ group }}</option>
+                                </select>
+                            </div>
+                            <div :class="(user.role || '').toUpperCase() === 'ADMIN' ? '' : 'md:col-span-2'">
+                                <label class="label-sm">หน่วยงาน (Department)</label>
+                                <select v-model="formItem.unitID" @change="generateAutoId" required class="input-std focus:ring-2 focus:ring-emerald-400 font-semibold theme-text" :disabled="(user.role || '').toUpperCase() === 'ADMIN' && !formItem.group">
+                                    <option value="" disabled>-- เลือกหน่วยงาน --</option>
+                                    <option v-for="u in availableUnitsForItemForm" :key="u" :value="u">{{ u }}</option>
+                                </select>
+                            </div>
+
+                            <!-- 1.2 รหัสน้ำยา -->
+                            <div class="md:col-span-2">
+                                <label class="label-sm">รหัสน้ำยา (Item ID)</label>
+                                <div class="relative flex items-center">
+                                    <input v-model="formItem.itemID" type="text" required class="input-std focus:ring-2 focus:ring-emerald-400 font-mono font-bold text-emerald-600 bg-slate-100 pr-10" :disabled="itemModalMode === 'edit'" placeholder="เช่น CHE-001">
+                                    <div v-if="isGeneratingId" class="absolute right-3 flex items-center justify-center">
+                                        <i class="ph ph-spinner-gap animate-spin text-emerald-500 text-lg inline-block origin-center"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 1.3 ชื่อน้ำยา -->
+                        <div>
+                            <label class="label-sm">ชื่อน้ำยา (Item Name)</label>
+                            <input v-model="formItem.itemName" type="text" required class="input-std focus:ring-2 focus:ring-emerald-400 font-bold theme-text" placeholder="ระบุชื่อน้ำยา">
+                        </div>
+
+                        <!-- 1.X บริษัท และ ราคา -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t theme-border pt-4 mt-2 mb-2">
+                            <div>
+                                <label class="label-sm">บริษัทจำหน่าย/นำเข้า</label>
+                                <select v-model="formItem.company" class="input-std focus:ring-2 focus:ring-emerald-400">
+                                    <option value="">-- ไม่ระบุ --</option>
+                                    <option v-for="opt in formOptions.companies" :key="opt" :value="opt">{{ opt }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="label-sm">มูลค่าต่อหน่วย (บาท)</label>
+                                <input v-model.number="formItem.price" type="number" min="0" step="0.01" class="input-std focus:ring-2 focus:ring-emerald-400 font-mono font-bold text-emerald-600" placeholder="0.00">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t theme-border pt-4 mt-2">
+                            <!-- 1.4 จุดต่ำสุด -->
+                            <div>
+                                <label class="label-sm">จุดต่ำสุด (Min Level)</label>
+                                <input v-model.number="formItem.minLevel" type="number" required min="0" class="input-std focus:ring-2 focus:ring-emerald-400 text-center font-mono font-bold">
+                            </div>
+                            <!-- 1.5 หน่วยนับ -->
+                            <div>
+                                <label class="label-sm">หน่วยนับ (Unit)</label>
+                                <select v-model="formItem.unit" required class="input-std focus:ring-2 focus:ring-emerald-400">
+                                    <option value="" disabled>-- เลือกหน่วยนับ --</option>
+                                    <option v-for="opt in formOptions.reagUnits" :key="opt" :value="opt">{{ opt }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t theme-border pt-4 mt-2">
+                            <!-- 1.6 เครื่องตรวจวิเคราะห์ -->
+                            <div class="md:col-span-2">
+                                <label class="flex items-center gap-2 mb-2 cursor-pointer w-max">
+                                    <input type="checkbox" v-model="formItem.useAnalyzer" class="w-4 h-4 text-emerald-500 rounded focus:ring-emerald-400">
+                                    <span class="text-[13px] font-bold theme-text">ใช้กับเครื่องตรวจวิเคราะห์ (Analyzer)</span>
+                                </label>
+                                <select v-if="formItem.useAnalyzer" v-model="formItem.analyzer" required class="input-std focus:ring-2 focus:ring-emerald-400 bg-emerald-50/50">
+                                    <option value="" disabled>-- เลือกเครื่องตรวจวิเคราะห์ --</option>
+                                    <option v-for="opt in filteredAnalyzers" :key="opt.name" :value="opt.name">{{ opt.name }}</option>
+                                </select>
+                            </div>
+                            
+                            <!-- 1.7 อุณหภูมิในการเก็บรักษา -->
+                            <div>
+                                <label class="label-sm">อุณหภูมิเก็บรักษา (°C)</label>
+                                <input v-model="formItem.storageTemp" type="text" class="input-std focus:ring-2 focus:ring-emerald-400" placeholder="เช่น 2-8 °C">
+                            </div>
+                            <!-- 1.8 สถานที่เก็บ -->
+                            <div>
+                                <label class="label-sm">สถานที่เก็บ (Location)</label>
+                                <select v-model="formItem.storageLocation" class="input-std focus:ring-2 focus:ring-emerald-400">
+                                    <option value="">-- ไม่ระบุ --</option>
+                                    <option v-for="opt in formOptions.storageLocations" :key="opt" :value="opt">{{ opt }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 2 สถานะระงับการใช้งาน (เฉพาะตอนแก้ไข) -->
+                        <div v-if="itemModalMode === 'edit'" class="mt-4 p-3 bg-rose-50/50 rounded-xl border border-rose-100 flex items-center gap-3">
+                            <label class="flex items-center gap-2 cursor-pointer w-full">
+                                <input type="checkbox" v-model="formItem.isSuspended" class="w-5 h-5 text-rose-500 rounded focus:ring-rose-400 accent-rose-500">
+                                <span class="text-sm font-bold text-rose-600"><i class="ph ph-warning-circle"></i> ระงับการใช้งาน (Suspended)</span>
+                            </label>
+                        </div>
+
+                        <div class="flex justify-end gap-3 pt-4 border-t theme-border mt-2">
+                            <button type="button" @click="closeItemModal" class="px-5 py-2.5 rounded-xl theme-text-muted hover:bg-black/5 transition font-bold text-sm">ยกเลิก</button>
+                            <button type="submit" :disabled="isGeneratingId" class="flex items-center gap-2 text-white px-8 py-2.5 rounded-xl font-bold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 text-sm disabled:opacity-50" :class="itemModalMode === 'create' ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : 'bg-gradient-to-r from-sky-400 to-blue-500'">
+                                <i class="ph ph-floppy-disk text-lg"></i> {{ itemModalMode === 'create' ? 'บันทึกข้อมูล' : 'อัปเดตข้อมูล' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Modal: พิมพ์สติ๊กเกอร์ย้อนหลัง -->
+        <transition name="fade">
+            <div v-if="showPrintModal" @click.self="showPrintModal=false" class="fixed inset-0 z-[75] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print overflow-y-auto">
+                <div class="liquid-glass rounded-3xl w-full max-w-md p-0 overflow-hidden animate-slide-up shadow-2xl my-auto border border-pink-500/30">
+                    <div class="p-5 border-b theme-border flex justify-between items-center bg-pink-500/10 backdrop-blur-md">
+                        <h3 class="text-lg font-bold theme-text flex items-center gap-2"><i class="ph ph-printer text-xl text-pink-500"></i> พิมพ์บาร์โค้ด</h3>
+                        <button @click="showPrintModal=false" class="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 hover:bg-rose-100 text-slate-400 hover:text-rose-500 text-xl font-bold transition"><i class="ph ph-x"></i></button>
+                    </div>
+                    
+                    <div class="p-6 space-y-4">
+                        <div class="bg-black/5 p-3 rounded-xl">
+                            <div class="text-[12px] theme-text-muted font-mono">{{ activePrintItem.itemID }}</div>
+                            <div class="font-bold theme-text text-[15px] truncate">{{ activePrintItem.itemName }}</div>
+                        </div>
+
+                        <div v-if="isPrintLotsLoading" class="py-6 text-center text-pink-500"><i class="ph ph-spinner-gap animate-spin text-3xl inline-block origin-center"></i></div>
+                        <div v-else-if="availableLots.length === 0" class="py-6 text-center theme-text-muted font-medium text-sm">ไม่พบรายการ Lot ที่มียอดคงเหลือ</div>
+                        <form v-else @submit.prevent="executePrintOldSticker" class="space-y-4">
+                            <div>
+                                <label class="label-sm">เลือก Lot ที่ต้องการพิมพ์</label>
+                                <select v-model="formPrint.selectedLotStr" required class="input-std focus:ring-2 focus:ring-pink-400 font-mono font-bold text-pink-600">
+                                    <option value="" disabled>-- เลือก Lot --</option>
+                                    <option v-for="lot in availableLots" :key="lot.lot" :value="JSON.stringify(lot)">
+                                        {{ lot.lot }} (เหลือ: {{ lot.qty }} {{ lot.unit }})
+                                    </option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="label-sm">จำนวนแผ่นที่ต้องการพิมพ์</label>
+                                <input v-model.number="formPrint.printCount" type="number" required min="1" max="50" class="input-std focus:ring-2 focus:ring-pink-400 text-center font-bold text-lg">
+                            </div>
+                            <div class="flex justify-end gap-3 pt-4">
+                                <button type="button" @click="showPrintModal=false" class="px-5 py-2.5 rounded-xl theme-text-muted hover:bg-black/5 transition font-bold text-sm">ยกเลิก</button>
+                                <button type="submit" class="flex items-center gap-2 bg-gradient-to-r from-pink-400 to-rose-500 text-white px-8 py-2.5 rounded-xl font-bold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 text-sm">
+                                    <i class="ph ph-printer text-lg"></i> สั่งพิมพ์
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Modal: Settings -->
+        <transition name="fade">
+            <div v-if="showSettingsModal && !showStickerModal" @click.self="showSettingsModal=false" class="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 no-print overflow-y-auto">
+                <div class="liquid-glass rounded-3xl w-full max-w-md p-0 overflow-hidden animate-slide-up shadow-2xl my-auto">
+                    <div class="p-5 border-b theme-border flex justify-between items-center bg-white/30 backdrop-blur-sm sticky top-0 z-10">
+                        <h3 class="text-lg font-bold theme-text flex items-center gap-2"><i class="ph ph-gear-six text-xl text-orange-500"></i> ตั้งค่าระบบ</h3>
+                        <button @click="showSettingsModal=false" class="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 hover:bg-rose-100 text-slate-400 hover:text-rose-500 text-xl font-bold transition"><i class="ph ph-x"></i></button>
+                    </div>
+                    <div class="p-6 border-b theme-border text-center">
+                        <div class="w-32 h-32 mx-auto mb-4 bg-transparent rounded-2xl p-0 overflow-hidden">
+                            <img :src="systemConfig.logoUrl" class="w-full h-full object-contain filter drop-shadow-md" onerror="this.style.display='none'">
+                        </div>
+                        <h2 class="font-bold text-2xl pb-1 animated-pastel-text">reAgentics</h2>
+                        <span class="text-[10px] text-white bg-sky-600 font-bold px-2 py-0.5 rounded-md mt-0 inline-block shadow-sm">{{ appVersion.split(' ')[0] }}</span>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <h4 class="text-[11px] font-bold theme-text-muted uppercase tracking-widest mb-3">ธีมสี (THEME)</h4>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button @click="changeTheme('light')" :class="['p-2 rounded-xl flex flex-col items-center gap-1 transition', theme === 'light' ? 'bg-gradient-to-br from-sky-50 to-blue-50 text-sky-600 border border-sky-200 shadow-inner' : 'bg-[var(--bg-input)] theme-text border theme-border hover:bg-black/5']"><i class="ph ph-sun text-xl"></i><span class="text-[10px] font-bold">สว่าง</span></button>
+                                <button @click="changeTheme('eyecare')" :class="['p-2 rounded-xl flex flex-col items-center gap-1 transition', theme === 'eyecare' ? 'bg-gradient-to-br from-amber-50 to-orange-50 text-amber-700 border border-amber-200 shadow-inner' : 'bg-[var(--bg-input)] theme-text border theme-border hover:bg-black/5']"><i class="ph ph-eye text-xl"></i><span class="text-[10px] font-bold">ถนอมสายตา</span></button>
+                                <button @click="changeTheme('dark')" :class="['p-2 rounded-xl flex flex-col items-center gap-1 transition', theme === 'dark' ? 'bg-slate-700 text-white border border-slate-600 shadow-inner' : 'bg-[var(--bg-input)] theme-text border theme-border hover:bg-black/5']"><i class="ph ph-moon text-xl"></i><span class="text-[10px] font-bold">มืด</span></button>
+                            </div>
+                        </div>
+                        <div class="space-y-3 pt-2 border-t theme-border border-dashed">
+                            <h4 class="text-[11px] font-bold theme-text-muted uppercase tracking-widest mb-1">บัญชีผู้ใช้</h4>
+                            <button @click="openChangePassword" class="w-full bg-[var(--bg-input)] hover:brightness-95 border theme-border rounded-2xl p-4 flex justify-between items-center shadow-sm active:scale-95 transition group">
+                                <div class="flex items-center gap-3">
+                                    <div class="bg-orange-100 p-2.5 rounded-xl text-orange-500 group-hover:bg-orange-500 group-hover:text-white transition-colors duration-300"><i class="ph ph-key text-lg"></i></div>
+                                    <div class="text-left"><span class="font-bold theme-text block">เปลี่ยนรหัสผ่าน</span><span class="text-[11px] theme-text-muted">แก้ไขรหัสผ่านส่วนตัว</span></div>
+                                </div>
+                                <i class="ph ph-caret-right text-slate-400 group-hover:translate-x-1 transition-transform"></i>
+                            </button>
+                        </div>
+                        <div v-if="(user.role || '').toUpperCase() === 'ADMIN'" class="space-y-3 pt-2 border-t theme-border border-dashed">
+                            <h4 class="text-[11px] font-bold theme-text-muted uppercase tracking-widest mb-1">ระบบ (ADMIN)</h4>
+                            
+                            <!-- ตั้งค่าผู้ใช้งาน User -->
+                            <button @click="openUsersAdminPage" class="w-full bg-[var(--bg-input)] hover:brightness-95 border theme-border rounded-2xl p-4 flex justify-between items-center shadow-sm active:scale-95 transition group">
+                                <div class="flex items-center gap-3">
+                                    <div class="bg-teal-100 p-2.5 rounded-xl text-teal-500 group-hover:bg-teal-500 group-hover:text-white transition-colors duration-300"><i class="ph ph-users text-lg"></i></div>
+                                    <div class="text-left"><span class="font-bold theme-text block">ตั้งค่าผู้ใช้งาน (User)</span><span class="text-[11px] theme-text-muted">จัดการสิทธิ์และสถานะบัญชี</span></div>
+                                </div>
+                                <i class="ph ph-caret-right text-slate-400 group-hover:translate-x-1 transition-transform"></i>
+                            </button>
+
+                            <label class="w-full bg-[var(--bg-input)] hover:brightness-95 border theme-border rounded-2xl p-4 flex justify-between items-center shadow-sm active:scale-95 transition relative overflow-hidden cursor-pointer block group">
+                                <div class="flex items-center gap-3">
+                                    <div class="bg-purple-100 p-2.5 rounded-xl text-purple-500 group-hover:bg-purple-500 group-hover:text-white transition-colors duration-300"><i class="ph ph-image text-lg"></i></div>
+                                    <div class="text-left"><span class="font-bold theme-text block">เปลี่ยน Logo ระบบ</span><span class="text-[11px] theme-text-muted">รองรับ PNG/JPG/GIF</span></div>
+                                </div>
+                                <i class="ph ph-upload-simple text-slate-400 group-hover:-translate-y-1 transition-transform"></i>
+                                <input type="file" @change="handleImageUpload($event, 'logo')" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer hidden">
+                            </label>
+                            <button @click="showStickerModal=true" class="w-full bg-[var(--bg-input)] hover:brightness-95 border theme-border rounded-2xl p-4 flex justify-between items-center shadow-sm active:scale-95 transition group">
+                                <div class="flex items-center gap-3">
+                                    <div class="bg-pink-100 p-2.5 rounded-xl text-pink-500 group-hover:bg-pink-500 group-hover:text-white transition-colors duration-300"><i class="ph ph-barcode text-lg"></i></div>
+                                    <div class="text-left"><span class="font-bold theme-text block">ตั้งค่าสติ๊กเกอร์บาร์โค้ด</span><span class="text-[11px] theme-text-muted">ปรับแต่งเลย์เอาต์ (WYSIWYG)</span></div>
+                                </div>
+                                <i class="ph ph-caret-right text-slate-400 group-hover:translate-x-1 transition-transform"></i>
+                            </button>
+                            <button @click="openDbSettingsModal" class="w-full bg-[var(--bg-input)] hover:brightness-95 border theme-border rounded-2xl p-4 flex justify-between items-center shadow-sm active:scale-95 transition group">
+                                <div class="flex items-center gap-3">
+                                    <div class="bg-indigo-100 p-2.5 rounded-xl text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white transition-colors duration-300"><i class="ph ph-hard-drives text-lg"></i></div>
+                                    <div class="text-left"><span class="font-bold theme-text block">ตั้งค่าฐานข้อมูล (Database)</span><span class="text-[11px] theme-text-muted">จัดการ SheetID และไฟล์รายปี</span></div>
+                                </div>
+                                <i class="ph ph-caret-right text-slate-400 group-hover:translate-x-1 transition-transform"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="pt-6 pb-2 text-center mt-4">
+                            <p class="text-[10px] text-slate-400 font-medium mb-1">Developed by</p>
+                            <p class="text-[11px] font-bold text-slate-500 tracking-wider animated-pastel-text inline-block">P. PURICUMPEE</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Modal: Sticker Config -->
+        <transition name="fade">
+            <div v-if="showStickerModal" class="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print overflow-y-auto">
+                <div class="liquid-glass rounded-3xl w-full max-w-5xl p-0 overflow-hidden animate-slide-up shadow-2xl my-auto flex flex-col max-h-[90vh]">
+                    <div class="p-5 border-b theme-border flex justify-between items-center bg-white/50 backdrop-blur-md shrink-0">
+                        <h3 class="text-lg font-bold theme-text flex items-center gap-2"><i class="ph ph-paint-brush-broad text-xl text-pink-500"></i> ปรับแต่งแบบสติ๊กเกอร์ (Sticker Layout Editor)</h3>
+                        <button @click="showStickerModal=false" class="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 hover:bg-rose-100 text-slate-400 hover:text-rose-500 text-xl font-bold transition"><i class="ph ph-x"></i></button>
+                    </div>
+                    <div class="flex flex-col lg:flex-row flex-1 overflow-hidden bg-slate-50/50">
+                        <div v-if="stickerConfig.layout" class="w-full lg:w-[420px] shrink-0 border-r theme-border overflow-y-auto custom-scroll p-4 space-y-4 bg-[var(--bg-sidebar)]">
+                            <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                                <h4 class="text-[12px] font-bold text-pink-600 uppercase tracking-widest mb-3 border-b border-pink-100 pb-1">ตั้งค่าทั่วไป (General)</h4>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div><label class="label-sm text-[10px]">กว้าง (mm)</label><input v-model="stickerConfig.width" type="number" class="input-std py-1 text-[13px] font-mono font-bold text-center h-8 bg-slate-50 text-slate-700"></div>
+                                    <div><label class="label-sm text-[10px]">ยาว (mm)</label><input v-model="stickerConfig.height" type="number" class="input-std py-1 text-[13px] font-mono font-bold text-center h-8 bg-slate-50 text-slate-700"></div>
+                                    <div><label class="label-sm text-[10px]">พิมพ์ Auto (แผ่น)</label><input v-model="stickerConfig.autoPrintCount" type="number" class="input-std py-1 text-[13px] font-mono font-bold text-center h-8 bg-slate-50 text-slate-700"></div>
+                                    <div><label class="label-sm text-[10px]">พิมพ์กดมือ (แผ่น)</label><input v-model="stickerConfig.manualPrintCount" type="number" class="input-std py-1 text-[13px] font-mono font-bold text-center h-8 bg-slate-50 text-slate-700"></div>
+                                </div>
+                            </div>
+                            <div class="bg-blue-50/50 p-3 rounded-xl border border-blue-100 shadow-sm text-slate-700">
+                                <div class="flex justify-between items-center mb-2"><h4 class="text-[12px] font-bold text-blue-600">ชื่อน้ำยา (Item Name)</h4><label class="flex items-center gap-1.5 cursor-pointer"><span class="text-[10px] text-blue-600 font-bold">แสดง</span><input type="checkbox" v-model="stickerConfig.layout.cyto.visible" class="w-3.5 h-3.5"></label></div>
+                                <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="label-sm text-[10px]">แกน X</label><input v-model="stickerConfig.layout.cyto.x" type="number" step="0.5" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div><div><label class="label-sm text-[10px]">แกน Y</label><input v-model="stickerConfig.layout.cyto.y" type="number" step="0.5" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div></div>
+                                <div class="grid grid-cols-3 gap-2"><div><label class="label-sm text-[10px]">ขนาด Font</label><input v-model="stickerConfig.layout.cyto.size" type="number" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div><div><label class="label-sm text-[10px]">แบบอักษร</label><select v-model="stickerConfig.layout.cyto.font" class="input-std py-1 text-[12px] font-semibold h-8 bg-white px-1"><option value="Montserrat">Main</option><option value="Roboto Mono">Mono</option></select></div></div>
+                            </div>
+                            <div class="bg-amber-50/50 p-3 rounded-xl border border-amber-100 shadow-sm text-slate-700">
+                                <div class="flex justify-between items-center mb-2"><h4 class="text-[12px] font-bold text-amber-600">เลข Lot (Lot No.)</h4><label class="flex items-center gap-1.5 cursor-pointer"><span class="text-[10px] text-amber-600 font-bold">แสดง</span><input type="checkbox" v-model="stickerConfig.layout.age.visible" class="w-3.5 h-3.5"></label></div>
+                                <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="label-sm text-[10px]">แกน X</label><input v-model="stickerConfig.layout.age.x" type="number" step="0.5" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div><div><label class="label-sm text-[10px]">แกน Y</label><input v-model="stickerConfig.layout.age.y" type="number" step="0.5" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div></div>
+                                <div class="grid grid-cols-3 gap-2"><div><label class="label-sm text-[10px]">ขนาด Font</label><input v-model="stickerConfig.layout.age.size" type="number" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div><div><label class="label-sm text-[10px]">แบบอักษร</label><select v-model="stickerConfig.layout.age.font" class="input-std py-1 text-[12px] font-semibold h-8 bg-white px-1"><option value="Roboto Mono">Mono</option><option value="Montserrat">Main</option></select></div></div>
+                            </div>
+                            <div class="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 shadow-sm text-slate-700">
+                                <div class="flex justify-between items-center mb-2"><h4 class="text-[12px] font-bold text-emerald-600">วันหมดอายุ (EXP)</h4><label class="flex items-center gap-1.5 cursor-pointer"><span class="text-[10px] text-emerald-600 font-bold">แสดง</span><input type="checkbox" v-model="stickerConfig.layout.spec.visible" class="w-3.5 h-3.5"></label></div>
+                                <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="label-sm text-[10px]">แกน X</label><input v-model="stickerConfig.layout.spec.x" type="number" step="0.5" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div><div><label class="label-sm text-[10px]">แกน Y</label><input v-model="stickerConfig.layout.spec.y" type="number" step="0.5" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div></div>
+                                <div class="grid grid-cols-3 gap-2"><div><label class="label-sm text-[10px]">ขนาด Font</label><input v-model="stickerConfig.layout.spec.size" type="number" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div><div><label class="label-sm text-[10px]">แบบอักษร</label><select v-model="stickerConfig.layout.spec.font" class="input-std py-1 text-[12px] font-semibold h-8 bg-white px-1"><option value="Roboto Mono">Mono</option><option value="Montserrat">Main</option></select></div></div>
+                            </div>
+                            <div class="bg-purple-50/50 p-3 rounded-xl border border-purple-100 shadow-sm text-slate-700">
+                                <div class="flex justify-between items-center mb-2"><h4 class="text-[12px] font-bold text-purple-600">บาร์โค้ด (Barcode)</h4><label class="flex items-center gap-1.5 cursor-pointer"><span class="text-[10px] text-purple-600 font-bold">แสดง</span><input type="checkbox" v-model="stickerConfig.layout.bar.visible" class="w-3.5 h-3.5"></label></div>
+                                <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="label-sm text-[10px]">แกน X</label><input v-model="stickerConfig.layout.bar.x" type="number" step="0.5" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div><div><label class="label-sm text-[10px]">แกน Y</label><input v-model="stickerConfig.layout.bar.y" type="number" step="0.5" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div></div>
+                                <div class="grid grid-cols-2 gap-2"><div><label class="label-sm text-[10px]">สูง (px)</label><input v-model="stickerConfig.barcodeHeight" type="number" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white"></div><div><label class="label-sm text-[10px]">กว้าง (สเกล)</label><input v-model="stickerConfig.barcodeWidth" type="number" step="0.1" class="input-std py-1 text-[13px] font-mono text-center h-8 bg-white px-1"></div></div>
+                            </div>
+                        </div>
+                        <div class="flex-1 flex flex-col relative bg-slate-200">
+                            <div v-if="stickerConfig.layout" class="flex-1 flex items-center justify-center p-0 overflow-hidden relative bg-slate-200/80">
+                                <div class="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm border border-slate-300 font-bold text-xs text-slate-700 flex items-center gap-2">
+                                    <i class="ph ph-eye text-lg text-pink-500"></i> Live Preview <span class="opacity-60 font-medium ml-1">({{ stickerConfig.width }}x{{ stickerConfig.height }}mm)</span>
+                                </div>
+                                <div class="canvas-zoom-wrapper w-full h-full" ref="zoomWrapper" @wheel.ctrl.prevent="handleZoomWheel" @click.self="activeStickerElement = null">
+                                    <div class="sticker-canvas-bg shadow-xl" :style="{ width: stickerConfig.width + 'mm', height: stickerConfig.height + 'mm', minWidth: stickerConfig.width + 'mm', minHeight: stickerConfig.height + 'mm', transform: 'scale(' + (stickerZoom || 1) + ')' }" @click.self="activeStickerElement = null">
+                                        <div v-show="stickerConfig.layout.cyto.visible" class="sticker-element text-black" :class="{ 'active': activeStickerElement === 'cyto' }" @mousedown.prevent.stop="startDrag('cyto', $event)" :style="{ left: stickerConfig.layout.cyto.x + 'mm', top: stickerConfig.layout.cyto.y + 'mm', fontSize: stickerConfig.layout.cyto.size + 'pt', fontWeight: stickerConfig.layout.cyto.bold ? 'bold' : 'normal', fontFamily: getFontStr(stickerConfig.layout.cyto.font), transform: 'translate(-50%, -50%) rotate(' + stickerConfig.layout.cyto.rot + 'deg)' }">
+                                            <div v-if="activeStickerElement === 'cyto'" class="rotator-handle" @mousedown.prevent.stop="startRotate('cyto', $event)"></div>{{ mockSticker.itemName }}
+                                        </div>
+                                        <div v-show="stickerConfig.layout.age.visible" class="sticker-element text-black" :class="{ 'active': activeStickerElement === 'age' }" @mousedown.prevent.stop="startDrag('age', $event)" :style="{ left: stickerConfig.layout.age.x + 'mm', top: stickerConfig.layout.age.y + 'mm', fontSize: stickerConfig.layout.age.size + 'pt', fontWeight: stickerConfig.layout.age.bold ? 'bold' : 'normal', fontFamily: getFontStr(stickerConfig.layout.age.font), transform: 'translate(-50%, -50%) rotate(' + stickerConfig.layout.age.rot + 'deg)' }">
+                                            <div v-if="activeStickerElement === 'age'" class="rotator-handle" @mousedown.prevent.stop="startRotate('age', $event)"></div>Lot: {{ mockSticker.lot }}
+                                        </div>
+                                        <div v-show="stickerConfig.layout.spec.visible" class="sticker-element text-black" :class="{ 'active': activeStickerElement === 'spec' }" @mousedown.prevent.stop="startDrag('spec', $event)" :style="{ left: stickerConfig.layout.spec.x + 'mm', top: stickerConfig.layout.spec.y + 'mm', fontSize: stickerConfig.layout.spec.size + 'pt', fontWeight: stickerConfig.layout.spec.bold ? 'bold' : 'normal', fontFamily: getFontStr(stickerConfig.layout.spec.font), transform: 'translate(-50%, -50%) rotate(' + stickerConfig.layout.spec.rot + 'deg)' }">
+                                            <div v-if="activeStickerElement === 'spec'" class="rotator-handle" @mousedown.prevent.stop="startRotate('spec', $event)"></div>Exp: {{ mockSticker.exp }}
+                                        </div>
+                                        <div v-show="stickerConfig.layout.bar.visible" class="sticker-element" :class="{ 'active': activeStickerElement === 'bar' }" @mousedown.prevent.stop="startDrag('bar', $event)" :style="{ left: stickerConfig.layout.bar.x + 'mm', top: stickerConfig.layout.bar.y + 'mm', transform: 'translate(-50%, -50%) rotate(' + stickerConfig.layout.bar.rot + 'deg)' }">
+                                            <div v-if="activeStickerElement === 'bar'" class="rotator-handle" @mousedown.prevent.stop="startRotate('bar', $event)"></div>
+                                            <svg id="barcode-preview" style="max-width: none;"></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="absolute bottom-6 right-6 flex items-center gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-slate-200/50 z-20">
+                                    <button @click.prevent="zoomOutSticker" class="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-600 transition"><i class="ph ph-minus text-lg"></i></button>
+                                    <div class="w-12 text-center font-mono font-bold text-sm text-indigo-600">{{ Math.round((stickerZoom || 1) * 100) }}%</div>
+                                    <button @click.prevent="zoomInSticker" class="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-600 transition"><i class="ph ph-plus text-lg"></i></button>
+                                    <button @click.prevent="resetZoomSticker" class="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-pink-100 text-pink-600 transition" title="Reset Zoom"><i class="ph ph-arrows-out-simple text-lg"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t theme-border bg-[var(--bg-card)] flex justify-end gap-3 shrink-0">
+                        <button @click="showStickerModal=false" class="px-6 py-2.5 rounded-xl theme-text-muted hover:bg-black/5 transition font-bold text-sm">ปิด</button>
+                        <button @click="saveStickerConfig" :disabled="isLoading" class="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white px-8 py-2.5 rounded-xl font-bold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 text-sm disabled:opacity-50">
+                            <i class="ph ph-floppy-disk text-lg"></i> บันทึกเลย์เอาต์สติ๊กเกอร์
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Profile Modal -->
+        <transition name="fade">
+            <div v-if="showProfileModal" @click.self="showProfileModal=false" class="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+                <div class="liquid-glass rounded-3xl w-full max-w-sm p-8 shadow-2xl relative animate-slide-up flex flex-col items-center">
+                    <button @click="showProfileModal=false" class="absolute top-5 right-5 w-8 h-8 rounded-full flex items-center justify-center bg-black/5 hover:bg-rose-100 text-slate-400 hover:text-rose-500 text-xl font-bold transition"><i class="ph ph-x"></i></button>
+                    <label class="w-32 h-32 rounded-full border-4 theme-border shadow-xl mb-5 flex items-center justify-center bg-sky-100 text-sky-600 font-black text-4xl overflow-hidden cursor-pointer group relative">
+                        <img v-if="user.image" :src="user.image" class="w-full h-full object-cover">
+                        <span v-else>{{ user.name.charAt(0) }}</span>
+                        <div class="absolute inset-0 bg-black/50 hidden group-hover:flex flex-col items-center justify-center text-white font-medium text-xs backdrop-blur-sm transition-all"><i class="ph ph-camera text-xl mb-1 block"></i>เปลี่ยนรูป</div>
+                        <input type="file" @change="handleImageUpload($event, 'profile')" accept="image/*" class="hidden">
+                    </label>
+                    <h3 class="text-2xl font-bold theme-text tracking-tight">{{ user.name }}</h3>
+                    <p class="text-sm text-sky-700 font-bold bg-sky-100/80 px-4 py-1.5 rounded-full mt-2 border border-sky-200">{{ user.group || 'Staff' }}</p>
+                    <p class="text-xs theme-text-muted mt-3 font-medium uppercase tracking-widest text-center leading-tight">Role: <span class="theme-text">{{ user.role }}</span><br><span v-if="(user.role || '').toUpperCase() === 'MANAGER' && user.unitIdRaw" class="text-[10px] text-purple-500">({{ user.unitIdRaw }})</span></p>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Modal: Image Viewer (สำหรับดูภาพขยายใหญ่) -->
+        <transition name="fade">
+            <div v-if="showImageViewer" @click.self="closeImageViewer" class="fixed inset-0 z-[100000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+                <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center animate-zoom-in">
+                    <button @click="closeImageViewer" class="absolute -top-12 right-0 md:-right-12 w-10 h-10 rounded-full flex items-center justify-center bg-white/10 hover:bg-rose-500 text-white text-2xl transition shadow-lg"><i class="ph ph-x"></i></button>
+                    <img :src="viewerImageUrl" class="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-4 border-white/10 bg-white/5 backdrop-blur-sm">
+                </div>
+            </div>
+        </transition>
+
+    </div>
+
+    <?!= include('js'); ?>
+</body>
+</html>
