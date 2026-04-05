@@ -1,0 +1,1437 @@
+<script>
+/**
+ * =========================================================================
+ * System: reAgentics - Laboratory Reagent Management System
+ * Version: 0.8.8 (AI Core)
+ * File: js.html (Client-side JavaScript Logic)
+ * Developer: P. PURICUMPEE & AI Assistant
+ * Update: Smart OTP, Company/Price, Transport Temp/Speed, Delivery Note PDF
+ * =========================================================================
+ */
+
+const { createApp, ref, reactive, onMounted, computed, watch, nextTick } = Vue;
+
+const runGas = (funcName, ...args) => {
+    return new Promise((resolve, reject) => {
+        if (typeof google === 'undefined') { 
+            reject(new Error("ไม่พบ Google API")); 
+            return; 
+        }
+        google.script.run
+            .withSuccessHandler(res => res ? resolve(res) : reject(new Error("No response")))
+            .withFailureHandler(err => reject(err))
+            [funcName](...args);
+    });
+};
+
+const app = createApp({
+    setup() {
+        const appVersion = "v0.8.8 AI Core"; 
+        const page = ref('login'); 
+        const loginStep = ref(1);
+        const otpInput = ref('');
+        const otpMessage = ref('');
+        const otpCooldown = ref(0); 
+        let otpTimerInterval = null;
+        
+        const isLocked = ref(false);
+        const lockPassword = ref('');
+        const lockError = ref('');
+        let afkTimeout = null;
+        let sessionCheckInterval = null;
+
+        const theme = ref('light'); 
+        
+        const isLoading = ref(true);
+        const isDataLoading = ref(false);
+        const isSpinning = ref(false);
+        const isSidebarOpen = ref(true); 
+        
+        const showSettingsModal = ref(false);
+        const showProfileModal = ref(false);
+        const showStickerModal = ref(false); 
+        const isDbConfigLoading = ref(false); 
+        const dbModalTab = ref('core'); 
+
+        // Image Viewer State
+        const showImageViewer = ref(false);
+        const viewerImageUrl = ref('');
+
+        const user = reactive({ name: '', position: '', role: '', username: '', userId: '', image: '', group: '', unitIdRaw: '', allowedUnits: [] });
+        const systemConfig = reactive({ logoUrl: 'https://cdn-icons-png.flaticon.com/512/3003/3003251.png' });
+        const config = reactive({ years: [], selectedYear: '' });
+        const formLogin = reactive({ username: '', password: '' });
+
+        const dbConfig = reactive({ 
+            mainId: '', unitId: '', userId: '', configId: '', logId: '', years: [],
+            folderProfile: '', folderLogo: '', unitFolders: [], deliveryNoteFolders: []
+        });
+
+        // -----------------------------------------------------------------
+        // Users Admin Management State
+        // -----------------------------------------------------------------
+        const usersList = ref([]);
+        const isUsersLoading = ref(false);
+        const showEditUserModal = ref(false);
+        const isSavingUser = ref(false);
+        
+        const formUserEdit = reactive({
+            originalUserId: '', name: '', userId: '', email: '', group: '', 
+            role: 'USER', unitIdRaw: '', unitIdArr: [], status: 'ปกติ', otpStatus: 'ON'
+        });
+
+        // -----------------------------------------------------------------
+        // Inventory & Filter State
+        // -----------------------------------------------------------------
+        const inventoryList = ref([]); 
+        const formOptions = reactive({ units: [], reagUnits: [], analyzers: [], storageLocations: [], companies: [] });
+        
+        const filterDashboardGroup = ref('All'); // สำหรับหน้า Dashboard (Admin)
+        const filterGroup = ref('All');          // กลุ่มงานหน้า Inventory
+        const filterUnit = ref('All');           // หน่วยงานหน้า Inventory
+        const filterSearch = ref('');
+
+        // Item Modal Management
+        const showItemModal = ref(false);
+        const itemModalMode = ref('create'); 
+        const isGeneratingId = ref(false);
+        const formItem = reactive({
+            itemID: '', itemName: '', minLevel: 5, unit: '', group: '', unitID: '', 
+            useAnalyzer: false, analyzer: '', storageTemp: '', storageLocation: '', isSuspended: false,
+            image: '', imagePreview: '', imageChanged: false,
+            company: '', price: 0 // เพิ่มข้อมูลบริษัทและราคา
+        });
+
+        // Transactions Management
+        const transactionMode = ref(''); 
+        const transactionFilterGroup = ref(''); 
+        const transactionFilterUnit = ref('');  
+        const receiveStaging = ref([]);
+        const formReceive = reactive({ itemStr: '', lot: '', exp: '', qty: 1 });
+        const formDispense = reactive({ itemStr: '', qty: 1, barcodeInput: '', lot: '' });
+
+        // Transport & Delivery Note
+        const transactionTransportSpeed = ref('');
+        const deliveryNoteBase64 = ref('');
+        const deliveryNoteFileName = ref('');
+
+        const availableDispenseLots = ref([]);
+        const isDispenseLotsLoading = ref(false);
+
+        // Print Modal
+        const showPrintModal = ref(false);
+        const isPrintLotsLoading = ref(false);
+        const availableLots = ref([]);
+        const activePrintItem = ref(null);
+        const formPrint = reactive({ selectedLotStr: '', printCount: 1 });
+
+        // Sticker Configuration
+        const stickerZoom = ref(3.0); 
+        const activeStickerElement = ref(null); 
+        const stickerConfig = reactive({
+            width: 50, height: 30, autoPrintCount: 2, manualPrintCount: 1,
+            barcodeHeight: 35, barcodeWidth: 1.5,
+            layout: {
+                cyto: { x: 25, y: 4, size: 11, rot: 0, visible: true, bold: true, font: 'Montserrat' },  
+                name: { x: 25, y: 9, size: 9, rot: 0, visible: false, bold: false, font: 'Montserrat' }, 
+                age:  { x: 10, y: 26, size: 10, rot: 0, visible: true, bold: true, font: 'Roboto Mono' }, 
+                spec: { x: 40, y: 26, size: 10, rot: 0, visible: true, bold: true, font: 'Roboto Mono' }, 
+                unit: { x: 25, y: 28, size: 8, rot: 0, visible: false, bold: false, font: 'Montserrat' }, 
+                bar:  { x: 25, y: 15, rot: 0, visible: true, width: 1.5 } 
+            }
+        });
+        const mockSticker = reactive({ itemName: 'Glucose Reagent', itemID: 'CHE-001', lot: 'L889900', exp: '31/12/2026', unit: 'box' });
+
+        // =================================================================
+        // COMPUTED PROPERTIES
+        // =================================================================
+
+        // 1. ดึงกลุ่มงานทั้งหมดจาก formOptions.units
+        const availableUserGroups = computed(() => {
+            const groups = formOptions.units.map(u => u.group).filter(Boolean);
+            return [...new Set(groups)];
+        });
+
+        // 2. กลุ่มงานที่ผู้ใช้คนนี้มีสิทธิ์เลือก (ADMIN เห็นหมด, MANAGER/USER เห็นแค่ตัวเอง)
+        const availableGroupsForUser = computed(() => {
+            if ((user.role || '').toUpperCase() === 'ADMIN') return availableUserGroups.value;
+            return user.group ? [user.group] : [];
+        });
+
+        // 3. หน่วยงานที่สอดคล้องกับกลุ่มงาน (สำหรับฟอร์มแก้ไขพนักงาน - User Admin)
+        const availableUnitsForGroup = computed(() => {
+            if (!formUserEdit.group) return [];
+            return formOptions.units.filter(u => u.group === formUserEdit.group).map(u => u.name);
+        });
+
+        // 4. หน่วยงานที่สอดคล้องกับตัวกรองในหน้า Inventory
+        const availableUnitsForFilter = computed(() => {
+            let units = formOptions.units;
+            const targetGroup = (user.role || '').toUpperCase() === 'ADMIN' ? filterGroup.value : user.group;
+            if (targetGroup !== 'All') units = units.filter(u => u.group === targetGroup);
+            return units.map(u => u.name);
+        });
+
+        // 5. หน่วยงานที่สอดคล้องกับตัวกรองในหน้า Transactions (รับ/เบิก)
+        const availableUnitsForTransaction = computed(() => {
+            const role = (user.role || '').toUpperCase();
+            if (role === 'ADMIN') {
+                if (!transactionFilterGroup.value) return [];
+                return formOptions.units.filter(u => u.group === transactionFilterGroup.value).map(u => u.name);
+            } else {
+                // MANAGER และ USER สามารถรับ/เบิกน้ำยาได้ "ทุกหน่วยงาน" ที่อยู่ในกลุ่มงานตัวเอง
+                if (!user.group) return [];
+                return formOptions.units.filter(u => u.group === user.group).map(u => u.name);
+            }
+        });
+
+        // 6. หน่วยงานที่สอดคล้องกับกลุ่มงานในฟอร์มลงทะเบียนน้ำยา (Item Modal)
+        const availableUnitsForItemForm = computed(() => {
+            const role = (user.role || '').toUpperCase();
+            if (role === 'ADMIN') {
+                if (!formItem.group) return [];
+                return formOptions.units.filter(u => u.group === formItem.group).map(u => u.name);
+            } else if (role === 'MANAGER') {
+                // MANAGER สร้างน้ำยาได้เฉพาะ UnitID ที่ตัวเองดูแลเท่านั้น (อิงจาก user.unitIdRaw)
+                if (!user.unitIdRaw) return [];
+                const managedPrefixes = user.unitIdRaw.split(',').map(s => s.trim().toUpperCase());
+                return formOptions.units.filter(u => managedPrefixes.includes(u.prefix.toUpperCase())).map(u => u.name);
+            }
+            return [];
+        });
+
+        // Computed Helper: เช็คว่า MANAGER มีสิทธิ์กดปุ่ม "แก้ไขน้ำยา" หรือไม่
+        const canEditItem = (item) => {
+            const role = (user.role || '').toUpperCase();
+            if (role === 'ADMIN') return true;
+            if (role === 'MANAGER') {
+                if (!user.unitIdRaw) return false;
+                const managedPrefixes = user.unitIdRaw.split(',').map(s => s.trim().toUpperCase());
+                const unitObj = formOptions.units.find(u => u.name === item.unitID);
+                if (unitObj && managedPrefixes.includes(unitObj.prefix.toUpperCase())) return true;
+            }
+            return false;
+        };
+
+        // 7. Stats (Dashboard) แบบ Real-time
+        const stats = computed(() => {
+            let list = inventoryList.value;
+            if ((user.role || '').toUpperCase() === 'ADMIN') {
+                if (filterDashboardGroup.value !== 'All') list = list.filter(item => item.group === filterDashboardGroup.value);
+            } else {
+                list = list.filter(item => item.group === user.group);
+            }
+
+            let total = 0, low = 0;
+            list.forEach(item => {
+                total++;
+                if (item.balance < item.minLevel && item.status !== 'Suspended') low++;
+            });
+            return { total, lowStock: low, expiring: 0 }; 
+        });
+
+        // 8. ข้อมูลรายการน้ำยาหน้า Inventory
+        const filteredInventory = computed(() => {
+            let list = inventoryList.value;
+            const targetGroup = (user.role || '').toUpperCase() === 'ADMIN' ? filterGroup.value : user.group;
+            if (targetGroup !== 'All') list = list.filter(item => item.group === targetGroup);
+            
+            if (filterUnit.value !== 'All') list = list.filter(item => item.unitID === filterUnit.value);
+            if (filterSearch.value) {
+                const q = filterSearch.value.toLowerCase();
+                list = list.filter(item => item.itemName.toLowerCase().includes(q) || item.itemID.toLowerCase().includes(q));
+            }
+            return list;
+        });
+
+        // 9. ข้อมูลรายการน้ำยาหน้า Transactions (รับ/เบิก)
+        const filteredItemOptions = computed(() => {
+            if (!transactionFilterUnit.value) return []; // บังคับให้เลือก Unit ก่อน ถึงจะมีให้เลือกน้ำยา
+            
+            let list = inventoryList.value.filter(item => item.status !== 'Suspended');
+            list = list.filter(item => item.unitID === transactionFilterUnit.value);
+
+            return list.map(item => ({
+                valStr: `${item.itemID}|${item.itemName}|${item.unit}`,
+                displayText: `${item.itemID} : ${item.itemName}`
+            }));
+        });
+
+        const filteredAnalyzers = computed(() => {
+            if(!formItem.unitID) return [];
+            return formOptions.analyzers.filter(a => a.unit === formItem.unitID);
+        });
+
+        const maxDispenseQty = computed(() => {
+            if (!formDispense.lot || availableDispenseLots.value.length === 0) return Number.MAX_SAFE_INTEGER;
+            const selectedLotObj = availableDispenseLots.value.find(l => l.lot === formDispense.lot);
+            return selectedLotObj ? selectedLotObj.qty : Number.MAX_SAFE_INTEGER;
+        });
+
+        const selectedReceiveItemImage = computed(() => {
+            if (!formReceive.itemStr) return '';
+            const [itemID] = formReceive.itemStr.split('|');
+            const item = inventoryList.value.find(i => i.itemID === itemID);
+            return item && item.image ? item.image : '';
+        });
+
+        const selectedDispenseItemImage = computed(() => {
+            if (!formDispense.itemStr) return '';
+            const [itemID] = formDispense.itemStr.split('|');
+            const item = inventoryList.value.find(i => i.itemID === itemID);
+            return item && item.image ? item.image : '';
+        });
+
+
+        // =================================================================
+        // WATCHERS
+        // =================================================================
+        const AFK_LIMIT_MS = 25 * 60 * 1000; 
+        const SESSION_LIMIT_MS = 60 * 60 * 1000; 
+
+        watch(page, (newVal, oldVal) => {
+            if (newVal === 'transactions' && oldVal !== 'transactions') {
+                transactionMode.value = '';
+                transactionFilterGroup.value = '';
+                transactionFilterUnit.value = '';
+                receiveStaging.value = [];
+                Object.assign(formReceive, { itemStr: '', lot: '', exp: '', qty: 1 });
+                Object.assign(formDispense, { itemStr: '', qty: 1, barcodeInput: '', lot: '' });
+                availableDispenseLots.value = [];
+                transactionTransportSpeed.value = '';
+                removeDeliveryNote();
+            }
+            if (newVal === 'inventory' && oldVal !== 'inventory') {
+                fetchData(true);
+            }
+        });
+
+        // เมื่อเลือกกลุ่มงานเปลี่ยน ให้ Reset หน่วยงาน
+        watch(filterGroup, () => { filterUnit.value = 'All'; });
+
+        watch(() => formItem.useAnalyzer, (newVal) => { if (!newVal) formItem.analyzer = ''; });
+
+        watch(() => formDispense.itemStr, async (newVal) => {
+            availableDispenseLots.value = [];
+            formDispense.lot = '';
+            if (newVal) {
+                const [itemID] = newVal.split('|');
+                isDispenseLotsLoading.value = true;
+                try {
+                    const res = await runGas('apiGetActiveLots', itemID);
+                    if (res.success) availableDispenseLots.value = res.lots;
+                } catch(e) { console.error("Error fetching lots:", e); } 
+                finally { isDispenseLotsLoading.value = false; }
+            }
+        });
+
+        watch(() => config.selectedYear, (newVal) => { if (newVal && page.value !== 'login') { fetchData(); saveSession(); } });
+
+        // -----------------------------------------------------------------
+        // Authentication Methods (Update OTP & Security Bypass)
+        // -----------------------------------------------------------------
+        const startOtpTimer = () => {
+            otpCooldown.value = 60;
+            if (otpTimerInterval) clearInterval(otpTimerInterval);
+            otpTimerInterval = setInterval(() => {
+                otpCooldown.value--;
+                if (otpCooldown.value <= 0) clearInterval(otpTimerInterval);
+            }, 1000);
+        };
+
+        const handleLoginStep1 = async () => {
+            if (!formLogin.username || !formLogin.password) return;
+            isLoading.value = true;
+            try {
+                const res = await runGas('verifyLogin', formLogin.username, formLogin.password);
+                if (res.success) { 
+                    // ตรวจสอบสถานะ Bypass (ตั้งค่าใน Admin ให้ไม่ต้องขอ OTP)
+                    if (res.bypassed) {
+                        Object.assign(user, res.user); 
+                        config.years = res.years || [];
+                        if (config.years.length > 0 && !config.selectedYear) config.selectedYear = config.years[config.years.length - 1];
+                        
+                        page.value = 'dashboard'; 
+                        saveSession(); 
+                        
+                        fetchData(); fetchStickerConfig(); fetchFormOptions();
+                        resetAfkTimer(); startSessionMonitor(); 
+                        if(typeof Swal !== 'undefined') Swal.fire({ icon: 'success', title: 'Welcome', text: `คุณ ${user.name}`, timer: 1500, showConfirmButton: false });
+                    } else {
+                        // เข้าสู่หน้ากรอก OTP ตามปกติ
+                        loginStep.value = 2; 
+                        otpMessage.value = res.message; 
+                        user.userId = res.userId; 
+                        startOtpTimer();
+                    }
+                } else { 
+                    if(typeof Swal !== 'undefined') Swal.fire('Login Failed', res.message, 'error'); 
+                }
+            } catch (err) { console.error(err); } finally { isLoading.value = false; }
+        };
+
+        const handleResendOtp = async () => {
+            if (otpCooldown.value > 0) return;
+            isLoading.value = true;
+            try {
+                const res = await runGas('apiRequestNewOTP', user.userId);
+                if (res.success) {
+                    otpInput.value = ''; // เคลียร์ช่องพิมพ์ให้ว่างทันที
+                    otpMessage.value = res.message;
+                    startOtpTimer();
+                    if(typeof Swal !== 'undefined') Swal.fire({ icon: 'success', title: 'ส่ง OTP ใหม่แล้ว', text: 'กรุณาตรวจสอบที่กล่องจดหมายของคุณ', timer: 1500, showConfirmButton: false });
+                } else {
+                    if(typeof Swal !== 'undefined') Swal.fire('ข้อผิดพลาด', res.message, 'error');
+                }
+            } catch (err) { console.error(err); } finally { isLoading.value = false; }
+        };
+
+        const handleLoginStep2 = async () => {
+            if (!otpInput.value) return;
+            isLoading.value = true;
+            try {
+                const res = await runGas('verifyOTP', user.userId, otpInput.value);
+                if (res.success) {
+                    if (otpTimerInterval) clearInterval(otpTimerInterval);
+                    Object.assign(user, res.user); 
+                    config.years = res.years || [];
+                    if (config.years.length > 0 && !config.selectedYear) config.selectedYear = config.years[config.years.length - 1];
+                    
+                    page.value = 'dashboard'; 
+                    saveSession(); 
+                    
+                    fetchData(); fetchStickerConfig(); fetchFormOptions();
+                    resetAfkTimer(); startSessionMonitor(); 
+                    if(typeof Swal !== 'undefined') Swal.fire({ icon: 'success', title: 'Welcome', text: `คุณ ${user.name}`, timer: 1500, showConfirmButton: false });
+                } else { if(typeof Swal !== 'undefined') Swal.fire('OTP Failed', res.message, 'error'); }
+            } catch (err) { console.error(err); } finally { isLoading.value = false; }
+        };
+
+        const handleCancelLogin = () => { loginStep.value = 1; otpInput.value = ''; if (otpTimerInterval) clearInterval(otpTimerInterval); };
+
+        const handleLogout = async () => {
+            if(typeof Swal === 'undefined') return forceLogout();
+            const result = await Swal.fire({ title: 'ออกจากระบบ?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'ยืนยัน', cancelButtonText: 'ยกเลิก' });
+            if (result.isConfirmed) { runGas('logSystem', 'Logout', 'User manual logout', user.userId).catch(()=>{}); forceLogout(); }
+        };
+
+        const forceLogout = (isExpired = false) => {
+            page.value = 'login'; 
+            isLocked.value = false; isLoading.value = true;
+            clearTimeout(afkTimeout); if (sessionCheckInterval) clearInterval(sessionCheckInterval); if (otpTimerInterval) clearInterval(otpTimerInterval);
+            
+            Object.assign(user, { name: '', position: '', role: '', username: '', userId: '', image: '', group: '', unitIdRaw: '', allowedUnits: [] });
+            localStorage.removeItem('reAgenticsUser_v1'); 
+            
+            setTimeout(() => {
+                loginStep.value = 1; otpInput.value = ''; formLogin.username = ''; formLogin.password = ''; isLoading.value = false;
+                if (isExpired && typeof Swal !== 'undefined') Swal.fire({ icon: 'warning', title: 'เซสชันหมดอายุ', text: 'ระบบลงชื่อออกอัตโนมัติ (PDPA)', confirmButtonText: 'เข้าสู่ระบบใหม่' });
+            }, 800);
+        };
+
+        const saveSession = () => {
+            if (systemConfig.logoUrl) localStorage.setItem('reAgenticsLogo_v1', systemConfig.logoUrl);
+            if (!user.userId || page.value === 'login') return; 
+            localStorage.setItem('reAgenticsUser_v1', JSON.stringify({ 
+                user: user, years: config.years, selectedYear: config.selectedYear,
+                theme: theme.value, isLocked: isLocked.value, lastActive: Date.now() 
+            }));
+        };
+
+        const resetAfkTimer = () => {
+            if (page.value === 'login') return;
+            if (!isLocked.value) { saveSession(); clearTimeout(afkTimeout); afkTimeout = setTimeout(() => { lockScreen(); }, AFK_LIMIT_MS); }
+        };
+
+        const startSessionMonitor = () => {
+            if (sessionCheckInterval) clearInterval(sessionCheckInterval);
+            sessionCheckInterval = setInterval(() => {
+                if (page.value === 'login') return;
+                const savedStr = localStorage.getItem('reAgenticsUser_v1');
+                if (savedStr) {
+                    try {
+                        const saved = JSON.parse(savedStr);
+                        if (Date.now() - (saved.lastActive || 0) > SESSION_LIMIT_MS) {
+                            runGas('logSystem', 'Auto Logout', 'Session expired', user.userId).catch(()=>{}); forceLogout(true); 
+                        }
+                    } catch(e) {}
+                }
+            }, 60000); 
+        };
+
+        const lockScreen = () => {
+            if (page.value === 'login') return;
+            isLocked.value = true; lockPassword.value = ''; lockError.value = '';
+            clearTimeout(afkTimeout); saveSession();
+        };
+
+        // แก้ไขให้มีการบังคับ Log out เมื่อกรอกรหัสหน้า Lock Screen ผิด
+        const unlockScreen = async () => {
+            if (!lockPassword.value) return;
+            isLoading.value = true; lockError.value = '';
+            try {
+                const res = await runGas('verifyPasswordOnly', user.userId, lockPassword.value);
+                if (res.status === 'success' || res.success) { 
+                    isLocked.value = false; resetAfkTimer(); 
+                } else { 
+                    // บังคับ Log out ทันทีเมื่อรหัสผิด
+                    if(typeof Swal !== 'undefined') {
+                        await Swal.fire({ icon: 'error', title: 'รหัสผ่านไม่ถูกต้อง!', text: 'ระบบจะทำการลงชื่อออกอัตโนมัติเพื่อความปลอดภัย', confirmButtonText: 'ตกลง', confirmButtonColor: '#ef4444' });
+                    }
+                    forceLogout(); 
+                }
+            } catch (e) { lockError.value = 'เกิดข้อผิดพลาดในการเชื่อมต่อ'; } finally { isLoading.value = false; }
+        };
+
+        // -----------------------------------------------------------------
+        // Core Data Fetching
+        // -----------------------------------------------------------------
+        const fetchData = async (showSpinner = false) => {
+            if (page.value === 'login' || !config.selectedYear) return;
+            if(showSpinner) isSpinning.value = true;
+            isDataLoading.value = true; 
+            try {
+                const res = await runGas('getItemsData');
+                if (res && res.success) {
+                    mapInventoryData(res.data);
+                } else { console.error("fetchData failed: ", res); }
+            } catch (err) { console.error("fetchData error: ", err); } 
+            finally { 
+                isDataLoading.value = false; 
+                setTimeout(() => isSpinning.value = false, 500); 
+            }
+        };
+
+        const fetchFormOptions = async () => {
+            try {
+                const res = await runGas('apiGetFormOptions');
+                if (res && res.success) Object.assign(formOptions, res.data);
+            } catch(e) { console.error("fetchFormOptions Error:", e); }
+        };
+
+        const mapInventoryData = (payloadData) => {
+            if (!payloadData || payloadData.length === 0) { 
+                inventoryList.value = []; 
+                return; 
+            }
+            const mapped = []; 
+            try {
+                if (payloadData[0] && typeof payloadData[0] === 'object' && !Array.isArray(payloadData[0])) {
+                    payloadData.forEach(row => {
+                        const balance = Number(row.balance) || 0;
+                        const minLevel = Number(row.minLevel) || 0;
+                        const status = row.status || 'Active';
+                        // รวม company และ price เข้ามาในข้อมูลด้วย
+                        mapped.push({ ...row, balance, minLevel, status });
+                    });
+                }
+                inventoryList.value = mapped; 
+            } catch (err) { console.error("Map Data Error: ", err); }
+        };
+
+        // -----------------------------------------------------------------
+        // Users Admin Data & Management
+        // -----------------------------------------------------------------
+        const openUsersAdminPage = () => {
+            showSettingsModal.value = false;
+            page.value = 'users';
+            fetchUsersList();
+        };
+
+        const fetchUsersList = async () => {
+            isUsersLoading.value = true;
+            try {
+                const res = await runGas('apiGetUsersList', user.userId);
+                if (res.success) usersList.value = res.data;
+                else Swal.fire('ข้อผิดพลาด', res.message, 'error');
+            } catch (e) { Swal.fire('Error', e.message, 'error'); }
+            finally { isUsersLoading.value = false; }
+        };
+
+        const openEditUserModal = (u) => {
+            Object.assign(formUserEdit, {
+                originalUserId: u.originalUserId || u.userId,
+                name: u.name, userId: u.userId, email: u.email,
+                group: u.group, role: u.role, status: u.status,
+                otpStatus: u.otpStatus || 'ON', // เพิ่มการอ่านค่า OTP Status
+                unitIdArr: u.unitIdRaw ? u.unitIdRaw.split(',').map(s => s.trim()) : [],
+                unitIdRaw: u.unitIdRaw
+            });
+            showEditUserModal.value = true;
+        };
+
+        const handleUserGroupChange = () => { formUserEdit.unitIdArr = []; };
+        const handleUserRoleChange = () => { if (formUserEdit.role !== 'MANAGER') formUserEdit.unitIdArr = []; };
+
+        const saveUserEdit = async () => {
+            isSavingUser.value = true;
+            try {
+                if (formUserEdit.role === 'ADMIN') formUserEdit.unitIdRaw = 'ALL';
+                else if (formUserEdit.role === 'MANAGER') formUserEdit.unitIdRaw = formUserEdit.unitIdArr.join(', ');
+                else formUserEdit.unitIdRaw = '';
+
+                const payload = { ...formUserEdit };
+                const res = await runGas('apiSaveUserAdmin', payload, user.userId);
+                
+                if (res.success) {
+                    Swal.fire({ icon: 'success', title: 'สำเร็จ', text: res.message, timer: 1500, showConfirmButton: false });
+                    showEditUserModal.value = false;
+                    fetchUsersList();
+                } else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+            } catch (e) { Swal.fire('Error', e.message, 'error'); }
+            finally { isSavingUser.value = false; }
+        };
+
+        const getRoleBadgeClass = (role) => {
+            const r = String(role).toUpperCase();
+            if (r === 'ADMIN') return 'bg-purple-100 text-purple-700 border-purple-200';
+            if (r === 'MANAGER') return 'bg-orange-100 text-orange-700 border-orange-200';
+            return 'bg-slate-100 text-slate-600 border-slate-200';
+        };
+
+        const getRoleTextColorClass = (role) => {
+            const r = String(role).toUpperCase();
+            if (r === 'ADMIN') return 'text-purple-600';
+            if (r === 'MANAGER') return 'text-orange-600';
+            return 'text-slate-600';
+        };
+
+        // -----------------------------------------------------------------
+        // Table UI Formatters
+        // -----------------------------------------------------------------
+        const getStockColorClass = (item) => {
+            if (item.status === 'Suspended') return 'stock-suspended';
+            if (item.balance <= 0) return 'stock-low';
+            if (item.balance < item.minLevel) return 'stock-medium';
+            return 'stock-high';
+        };
+
+        const getStatusText = (item) => {
+            if (item.status === 'Suspended') return 'ระงับการใช้งาน';
+            if (item.balance <= 0) return 'หมด';
+            if (item.balance < item.minLevel) return 'ต่ำ';
+            return 'เพียงพอ';
+        };
+
+        const getStatusBadgeClass = (item) => {
+            if (item.status === 'Suspended') return 'bg-slate-100 text-slate-500 border-slate-200';
+            if (item.balance <= 0) return 'bg-rose-500/10 text-rose-600 border-rose-500/20';
+            if (item.balance < item.minLevel) return 'bg-amber-500/10 text-amber-600 border-amber-500/20';
+            return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20';
+        };
+
+        const getStatusIconClass = (item) => {
+            if (item.status === 'Suspended') return 'ph ph-minus-circle';
+            if (item.balance <= 0) return 'ph ph-x-circle';
+            if (item.balance < item.minLevel) return 'ph ph-warning';
+            return 'ph ph-check-circle';
+        };
+
+        // -----------------------------------------------------------------
+        // Image Viewer
+        // -----------------------------------------------------------------
+        const openImageViewer = (url) => {
+            if (!url) return;
+            viewerImageUrl.value = url;
+            showImageViewer.value = true;
+        };
+
+        const closeImageViewer = () => {
+            showImageViewer.value = false;
+            setTimeout(() => { viewerImageUrl.value = ''; }, 300); 
+        };
+
+        // -----------------------------------------------------------------
+        // Item Management Modal (Reagent Edit/Create)
+        // -----------------------------------------------------------------
+        const handleItemImageUpload = (event) => {
+            const file = event.target.files[0]; 
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) { 
+                Swal.fire('ไฟล์ใหญ่เกินไป', 'กรุณาอัปโหลดรูปภาพขนาดไม่เกิน 5MB', 'warning'); 
+                return; 
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                formItem.imagePreview = e.target.result;
+                formItem.imageChanged = true;
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        };
+
+        const openItemModal = (mode, item = null) => {
+            itemModalMode.value = mode;
+            if (mode === 'create') {
+                Object.assign(formItem, {
+                    itemID: '', itemName: '', minLevel: 5, unit: '', group: '', unitID: '', 
+                    useAnalyzer: false, analyzer: '', storageTemp: '', storageLocation: '', isSuspended: false,
+                    image: '', imagePreview: '', imageChanged: false,
+                    company: '', price: 0 // รีเซ็ตบริษัทและราคา
+                });
+                
+                // สำหรับ MANAGER ให้ล็อกกลุ่มงานเป็นของตัวเองอัตโนมัติ
+                if ((user.role || '').toUpperCase() !== 'ADMIN') {
+                    formItem.group = user.group;
+                }
+                
+                // ถ้ารายการ Unit ที่มีสิทธิ์สร้าง มีแค่ 1 อัน ให้เลือกเลย
+                if (availableUnitsForItemForm.value.length === 1) {
+                    formItem.unitID = availableUnitsForItemForm.value[0];
+                    generateAutoId();
+                }
+
+            } else if (mode === 'edit' && item) {
+                Object.assign(formItem, {
+                    itemID: item.itemID, itemName: item.itemName, minLevel: item.minLevel, unit: item.unit, 
+                    group: item.group || '', unitID: item.unitID,
+                    useAnalyzer: item.analyzer && item.analyzer !== 'No analyzer',
+                    analyzer: item.analyzer === 'No analyzer' ? '' : item.analyzer,
+                    storageTemp: item.storageTemp || '', storageLocation: item.storageLocation || '',
+                    isSuspended: item.status === 'Suspended',
+                    image: item.image || '', imagePreview: item.image || '', imageChanged: false,
+                    company: item.company || '', price: item.price || 0 // ดึงค่าเดิม
+                });
+            }
+            showItemModal.value = true;
+        };
+
+        const closeItemModal = () => { showItemModal.value = false; };
+
+        const generateAutoId = async () => {
+            if (itemModalMode.value !== 'create' || !formItem.unitID) return;
+            isGeneratingId.value = true;
+            try {
+                const res = await runGas('apiGetNextItemID', formItem.unitID);
+                if(res.success) formItem.itemID = res.nextId;
+                else Swal.fire('Warning', res.message, 'warning');
+            } catch(e) { console.error(e); }
+            isGeneratingId.value = false;
+        };
+
+        const saveItemData = async () => {
+            if(!formItem.itemID || !formItem.itemName || !formItem.unitID) return;
+            
+            isLoading.value = true;
+            try {
+                let finalImageUrl = formItem.image;
+
+                if (formItem.imageChanged) {
+                    if (formItem.imagePreview && formItem.imagePreview.startsWith('data:image')) {
+                        Swal.fire({ title: 'กำลังอัปโหลดรูปภาพ...', text: 'โปรดรอสักครู่', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                        
+                        const uploadRes = await runGas('apiUploadReagentImage', formItem.imagePreview, formItem.unitID, formItem.image, user.userId);
+                        if (uploadRes.success) finalImageUrl = uploadRes.url;
+                        else throw new Error("อัปโหลดรูปภาพล้มเหลว: " + uploadRes.message);
+                    } else if (!formItem.imagePreview) {
+                        finalImageUrl = ''; 
+                    }
+                }
+
+                Swal.fire({ title: 'กำลังบันทึกข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+                const payload = { ...formItem, image: finalImageUrl };
+                if (!payload.useAnalyzer) payload.analyzer = 'No analyzer';
+                payload.status = payload.isSuspended ? 'Suspended' : 'Active';
+                
+                delete payload.imagePreview;
+                delete payload.imageChanged;
+                
+                const apiName = itemModalMode.value === 'create' ? 'apiRegisterNewItem' : 'apiUpdateItem';
+                const res = await runGas(apiName, payload, user.userId);
+                
+                if (res.success) {
+                    Swal.fire({ icon: 'success', title: 'สำเร็จ', text: res.message, timer: 1500, showConfirmButton: false });
+                    closeItemModal();
+                    fetchData(true);
+                } else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+            } catch(e) { Swal.fire('Error', e.message, 'error'); } 
+            finally { isLoading.value = false; }
+        };
+
+        // -----------------------------------------------------------------
+        // Transaction Management (Receive / Dispense / Delivery Note)
+        // -----------------------------------------------------------------
+        const setTransactionMode = (mode) => { transactionMode.value = mode; };
+        
+        const cancelTransaction = () => { 
+            transactionMode.value = ''; transactionFilterGroup.value = ''; transactionFilterUnit.value = ''; receiveStaging.value = []; 
+            Object.assign(formReceive, { itemStr: '', lot: '', exp: '', qty: 1 });
+            Object.assign(formDispense, { itemStr: '', qty: 1, barcodeInput: '', lot: '' });
+            availableDispenseLots.value = [];
+            transactionTransportSpeed.value = '';
+            removeDeliveryNote();
+        };
+
+        // ฟังก์ชันจัดการอัปโหลดใบนำส่ง PDF ในตะกร้ารับน้ำยา
+        const handleDeliveryNoteUpload = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (file.type !== 'application/pdf') {
+                Swal.fire('ชนิดไฟล์ไม่ถูกต้อง', 'กรุณาอัปโหลดเอกสารใบนำส่งในรูปแบบ PDF เท่านั้นครับ', 'warning');
+                event.target.value = '';
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) { 
+                Swal.fire('ไฟล์ใหญ่เกินไป', 'กรุณาอัปโหลดเอกสาร PDF ขนาดไม่เกิน 5MB ครับ', 'warning');
+                event.target.value = '';
+                return;
+            }
+            deliveryNoteFileName.value = file.name;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                deliveryNoteBase64.value = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        const removeDeliveryNote = () => {
+            deliveryNoteFileName.value = '';
+            deliveryNoteBase64.value = '';
+        };
+
+        const addReceiveItem = () => {
+            if (!formReceive.itemStr || !formReceive.lot || !formReceive.exp || formReceive.qty < 1) {
+                Swal.fire('ข้อมูลไม่ครบ', 'กรุณากรอกข้อมูลให้ครบทุกช่อง', 'warning');
+                return;
+            }
+            const [itemID, itemName, unit] = formReceive.itemStr.split('|');
+            const uniqueId = Date.now().toString();
+            const itemMatch = inventoryList.value.find(i => i.itemID === itemID);
+            const image = itemMatch && itemMatch.image ? itemMatch.image : '';
+
+            // คัดลอกอุณหภูมิพัสดุจากรายการแรกในตะกร้ามาใส่รอไว้ (ถ้ามี)
+            let initialTemp = '';
+            if (receiveStaging.value.length > 0) {
+                initialTemp = receiveStaging.value[0].transportTemp;
+            }
+
+            receiveStaging.value.push({ 
+                uniqueId, itemID, itemName, unit, 
+                lot: formReceive.lot.toUpperCase(), 
+                exp: formReceive.exp, 
+                qty: formReceive.qty, 
+                transportTemp: initialTemp,
+                image 
+            });
+            formReceive.lot = ''; formReceive.exp = ''; formReceive.qty = 1;
+        };
+
+        const removeStagingItem = (uniqueId) => { receiveStaging.value = receiveStaging.value.filter(item => item.uniqueId !== uniqueId); };
+
+        const submitReceive = async () => {
+            if (receiveStaging.value.length === 0) return;
+            
+            // ตรวจสอบความเร็วขนส่ง (ฟิลด์บังคับ)
+            if (!transactionTransportSpeed.value) {
+                Swal.fire('ข้อมูลไม่ครบ', 'กรุณาเลือก "ความเร็วในการขนส่ง" ก่อนบันทึกรายการ', 'warning');
+                return;
+            }
+
+            // ตรวจสอบอุณหภูมิขนส่งของทุกรายการในตะกร้าว่าว่างหรือไม่
+            for(let i = 0; i < receiveStaging.value.length; i++) {
+                if(receiveStaging.value[i].transportTemp === '' || receiveStaging.value[i].transportTemp === null) {
+                    Swal.fire('ข้อมูลไม่ครบ', 'กรุณาระบุอุณหภูมิพัสดุให้ครบทุกรายการในตะกร้า', 'warning');
+                    return;
+                }
+            }
+
+            const confirm = await Swal.fire({ title: 'ยืนยันรับเข้าคลัง', text: `จำนวน ${receiveStaging.value.length} รายการ`, icon: 'question', showCancelButton: true, confirmButtonColor: '#0ea5e9' });
+            if (!confirm.isConfirmed) return;
+
+            isLoading.value = true;
+            try {
+                let finalDeliveryUrl = "";
+
+                // หากมีการแนบใบนำส่ง ให้ทำการอัปโหลดก่อน
+                if (deliveryNoteBase64.value && transactionFilterUnit.value) {
+                    Swal.fire({ title: 'กำลังอัปโหลดใบนำส่ง PDF...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                    const uploadRes = await runGas('apiUploadDeliveryNote', deliveryNoteBase64.value, transactionFilterUnit.value, user.userId);
+                    if (uploadRes.success) {
+                        finalDeliveryUrl = uploadRes.url;
+                    } else {
+                        throw new Error("อัปโหลดใบนำส่งล้มเหลว: " + uploadRes.message);
+                    }
+                }
+
+                Swal.fire({ title: 'กำลังบันทึกข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+                // ประกอบ Payload ส่งให้ Backend
+                const payload = { 
+                    type: 'RECEIVE', 
+                    yearSheetId: config.selectedYear, 
+                    userId: user.userId, 
+                    items: receiveStaging.value,
+                    transportSpeed: transactionTransportSpeed.value,
+                    deliveryNoteUrl: finalDeliveryUrl
+                };
+
+                const res = await runGas('processTransaction', payload);
+                if (res.success) {
+                    generateAndPrintBarcodes(receiveStaging.value);
+                    
+                    // Reset ค่าในฟอร์ม
+                    receiveStaging.value = []; 
+                    Object.assign(formReceive, { itemStr: '', lot: '', exp: '', qty: 1 });
+                    transactionTransportSpeed.value = '';
+                    removeDeliveryNote();
+
+                    fetchData(); 
+                    Swal.fire({ icon: 'success', title: 'รับเข้าสำเร็จ', timer: 1500, showConfirmButton: false });
+                } else { Swal.fire('ผิดพลาด', res.message, 'error'); }
+            } catch (err) { console.error(err); Swal.fire('Error', err.message, 'error'); } 
+            finally { isLoading.value = false; }
+        };
+
+        // --- กระบวนการเบิกน้ำยา ---
+        const handleBarcodeScan = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); processDispenseScan(formDispense.barcodeInput.trim()); formDispense.barcodeInput = ''; }
+        };
+
+        const processDispenseScan = (barcode) => {
+            if (!barcode.includes('-')) { Swal.fire('บาร์โค้ดไม่ถูกต้อง', 'กรุณาสแกนบาร์โค้ดที่ระบบสร้างให้เท่านั้น', 'warning'); return; }
+            const splitIdx = barcode.lastIndexOf('-');
+            if (splitIdx === -1) return;
+            const itemID = barcode.substring(0, splitIdx);
+            const lot = barcode.substring(splitIdx + 1);
+            
+            const matched = inventoryList.value.find(row => row.itemID === itemID);
+            const itemName = matched ? matched.itemName : itemID;
+
+            if (matched && matched.status === 'Suspended') {
+                Swal.fire('ปฏิเสธการทำรายการ', 'น้ำยารายการนี้ถูกระงับการใช้งาน', 'error'); return;
+            }
+
+            // บล็อคไม่ให้ MANAGER หรือ USER แสกนน้ำยาข้ามกลุ่มงาน
+            if ((user.role || '').toUpperCase() !== 'ADMIN') {
+                if (!matched || matched.group !== user.group) {
+                    Swal.fire('ปฏิเสธการเข้าถึง', 'บาร์โค้ดน้ำยานี้ไม่ได้อยู่ในสังกัดกลุ่มงานของคุณ', 'error'); return;
+                }
+            }
+
+            Swal.fire({
+                title: 'ยืนยันเบิกใช้งาน', html: `เบิก <b>${itemName}</b><br>Lot: <span class="font-mono text-amber-600">${lot}</span><br>จำนวน: 1 หน่วย ใช่หรือไม่?`,
+                icon: 'question', showCancelButton: true, confirmButtonColor: '#f59e0b'
+            }).then((res) => { if (res.isConfirmed) executeDispense(itemID, lot, 1); });
+        };
+
+        const submitManualDispense = () => {
+            if(!formDispense.itemStr || formDispense.qty < 1 || !formDispense.lot) return;
+            
+            if (formDispense.qty > maxDispenseQty.value) {
+                Swal.fire('ยอดไม่เพียงพอ', `Lot นี้มียอดคงเหลือเพียง ${maxDispenseQty.value} หน่วย`, 'warning');
+                formDispense.qty = maxDispenseQty.value; 
+                return;
+            }
+
+            const [itemID, itemName] = formDispense.itemStr.split('|');
+            Swal.fire({ 
+                title: 'ยืนยันเบิกใช้งาน', 
+                text: `เบิก ${itemName} (Lot: ${formDispense.lot.toUpperCase()}) จำนวน ${formDispense.qty} หน่วย?`, 
+                icon: 'question', showCancelButton: true, confirmButtonColor: '#f59e0b' 
+            })
+            .then((res) => { 
+                if (res.isConfirmed) executeDispense(itemID, formDispense.lot.toUpperCase(), formDispense.qty); 
+            });
+        };
+
+        const executeDispense = async (itemID, lot, qty) => {
+            isLoading.value = true;
+            try {
+                // เบิกน้ำยา ไม่ต้องมี Transport details
+                const payload = { type: 'DISPENSE', yearSheetId: config.selectedYear, userId: user.userId, items: [{ itemID, lot, qty }] };
+                const res = await runGas('processTransaction', payload);
+                if (res.success) {
+                    Swal.fire({ icon: 'success', title: 'ตัดยอดสำเร็จ', timer: 1500, showConfirmButton: false });
+                    Object.assign(formDispense, { itemStr: '', qty: 1, barcodeInput: '', lot: '' });
+                    availableDispenseLots.value = []; 
+                    fetchData();
+                } else { Swal.fire('ผิดพลาด', res.message, 'error'); }
+            } catch (err) { console.error(err); Swal.fire('Error', err.message, 'error'); } 
+            finally { isLoading.value = false; }
+        };
+
+        // -----------------------------------------------------------------
+        // Print Old Stickers
+        // -----------------------------------------------------------------
+        const openPrintModal = async (item) => {
+            activePrintItem.value = item;
+            availableLots.value = [];
+            formPrint.selectedLotStr = '';
+            formPrint.printCount = stickerConfig.manualPrintCount || 1;
+            showPrintModal.value = true;
+            isPrintLotsLoading.value = true;
+            
+            try {
+                const res = await runGas('apiGetActiveLots', item.itemID);
+                if (res.success) availableLots.value = res.lots;
+            } catch (e) { Swal.fire('Error', 'ไม่สามารถดึงข้อมูล Lot ได้: ' + e.message, 'error'); } 
+            finally { isPrintLotsLoading.value = false; }
+        };
+
+        const executePrintOldSticker = () => {
+            if (!formPrint.selectedLotStr || formPrint.printCount < 1) return;
+            const lotData = JSON.parse(formPrint.selectedLotStr);
+            const itemToPrint = [{ itemID: activePrintItem.value.itemID, itemName: activePrintItem.value.itemName, lot: lotData.lot, exp: lotData.exp, unit: lotData.unit, qty: 1 }];
+            
+            const origAutoCount = stickerConfig.autoPrintCount;
+            stickerConfig.autoPrintCount = formPrint.printCount;
+            
+            generateAndPrintBarcodes(itemToPrint);
+            
+            stickerConfig.autoPrintCount = origAutoCount; 
+            showPrintModal.value = false;
+        };
+
+        // -----------------------------------------------------------------
+        // Database & System Config Methods
+        // -----------------------------------------------------------------
+        const backToSettings = () => {
+            page.value = 'dashboard';
+            showSettingsModal.value = true;
+        };
+
+        const openDbSettingsModal = () => {
+            showSettingsModal.value = false;
+            page.value = 'database';
+            dbModalTab.value = 'core'; 
+            fetchDbConfig();
+        };
+
+        const fetchDbConfig = async () => {
+            isDbConfigLoading.value = true;
+            try {
+                const res = await runGas('apiGetDbConfig');
+                if(res.success) Object.assign(dbConfig, res.config);
+                else Swal.fire('ข้อผิดพลาด', res.message, 'error');
+            } catch(e) { console.error(e); } 
+            finally { isDbConfigLoading.value = false; }
+        };
+
+        const saveCoreDbConfig = async () => {
+            isLoading.value = true;
+            try {
+                const payload = { 
+                    mainId: dbConfig.mainId, unitId: dbConfig.unitId, userId: dbConfig.userId, configId: dbConfig.configId, logId: dbConfig.logId,
+                    folderProfile: dbConfig.folderProfile, folderLogo: dbConfig.folderLogo, 
+                    unitFolders: dbConfig.unitFolders, deliveryNoteFolders: dbConfig.deliveryNoteFolders // เพิ่มบันทึก Delivery Folder
+                };
+                const res = await runGas('apiSaveCoreDbConfig', payload, user.userId);
+                if (res.success) Swal.fire('สำเร็จ', 'บันทึกการตั้งค่าลงระบบเรียบร้อยแล้ว', 'success');
+                else Swal.fire('ข้อผิดพลาด', res.message, 'error');
+            } catch(e) { Swal.fire('Error', e.message, 'error'); } 
+            finally { isLoading.value = false; }
+        };
+
+        const createNewYearSheet = async () => {
+            const currentThaiYear = new Date().getFullYear() + 544; 
+            const { value: year } = await Swal.fire({
+                title: 'สร้างไฟล์ Transactions ใหม่',
+                input: 'number', inputLabel: 'ระบุปี พ.ศ. ที่ต้องการสร้าง (เช่น 2569)', inputPlaceholder: currentThaiYear,
+                showCancelButton: true, confirmButtonColor: '#10b981', confirmButtonText: 'สร้างไฟล์อัตโนมัติ',
+                inputValidator: (value) => { if (!value) return 'กรุณาระบุปี!' }
+            });
+
+            if (year) {
+                isLoading.value = true;
+                try {
+                    const res = await runGas('apiCreateYearSheet', year, user.userId);
+                    if (res && res.success) {
+                        Swal.fire('สำเร็จ', `สร้างและเชื่อมต่อไฟล์ปี ${year} เรียบร้อย`, 'success');
+                        if (!config.years.includes(String(year))) config.years.push(String(year));
+                        saveSession();
+                        fetchDbConfig(); 
+                    } else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+                } catch(e) { Swal.fire('Error', e.message, 'error'); }
+                finally { isLoading.value = false; }
+            }
+        };
+
+        const openManualAddYearModal = async () => {
+            const currentThaiYear = new Date().getFullYear() + 544;
+            const { value: formValues } = await Swal.fire({
+                title: 'นำเข้าไฟล์ข้อมูลรายปี',
+                html: `<div class="text-left space-y-3"><div><label class="text-xs font-bold text-slate-500">ปี พ.ศ. (Year)</label><input id="swal-year" type="number" class="swal2-input text-sm m-0 w-full" placeholder="${currentThaiYear}" value="${currentThaiYear}"></div><div><label class="text-xs font-bold text-slate-500">Sheet ID</label><input id="swal-sheetid" class="swal2-input text-sm m-0 w-full font-mono text-sky-600" placeholder="ใส่ Google Sheet ID ที่ต้องการนำเข้า"></div></div>`,
+                focusConfirm: false, showCancelButton: true, confirmButtonText: 'นำเข้าข้อมูล', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#0ea5e9',
+                preConfirm: () => {
+                    const year = document.getElementById('swal-year').value.trim(); const sheetId = document.getElementById('swal-sheetid').value.trim();
+                    if (!year || !sheetId) { Swal.showValidationMessage('กรุณากรอกข้อมูลให้ครบถ้วน'); return false; }
+                    return { year, sheetId };
+                }
+            });
+
+            if (formValues) {
+                isLoading.value = true;
+                try {
+                    const res = await runGas('apiManualAddYearSheet', formValues.year, formValues.sheetId, user.userId);
+                    if (res && res.success) {
+                        Swal.fire('สำเร็จ', `นำเข้าและเชื่อมต่อไฟล์ปี ${formValues.year} เรียบร้อย`, 'success');
+                        if (!config.years.includes(String(formValues.year))) { config.years.push(String(formValues.year)); }
+                        saveSession();
+                        fetchDbConfig(); 
+                    } else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+                } catch(e) { Swal.fire('Error', e.message, 'error'); } 
+                finally { isLoading.value = false; }
+            }
+        };
+
+        const disconnectYearSheet = (year) => {
+            Swal.fire({
+                title: 'ระงับการเชื่อมต่อ?', text: `ระบบจะหยุดเขียนข้อมูลลงไฟล์ปี ${year} ชั่วคราว`, icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#f59e0b', confirmButtonText: 'ระงับการเชื่อมต่อ'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    isLoading.value = true;
+                    try {
+                        const res = await runGas('apiDisconnectYearSheet', year, user.userId);
+                        if (res.success) {
+                            Swal.fire('สำเร็จ', `ระงับการเชื่อมต่อปี ${year} ชั่วคราวแล้ว`, 'success');
+                            fetchDbConfig(); 
+                            config.years = config.years.filter(y => String(y) !== String(year));
+                            if (config.selectedYear === String(year)) { config.selectedYear = config.years.length > 0 ? config.years[config.years.length - 1] : ''; }
+                            saveSession();
+                        } else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+                    } catch(e) { Swal.fire('Error', e.message, 'error'); }
+                    finally { isLoading.value = false; }
+                }
+            });
+        };
+
+        const reconnectYearSheet = (year) => {
+            const yearData = dbConfig.years.find(y => y.year === String(year));
+            if(!yearData) return;
+
+            Swal.fire({
+                title: 'เปิดการเชื่อมต่อ?', text: `ระบบจะกลับมาเขียนข้อมูลลงไฟล์ปี ${year} ตามปกติ`, icon: 'info',
+                showCancelButton: true, confirmButtonColor: '#10b981', confirmButtonText: 'เปิดเชื่อมต่อ'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    isLoading.value = true;
+                    try {
+                        const res = await runGas('apiManualAddYearSheet', year, yearData.fileId, user.userId);
+                        if (res.success) {
+                            Swal.fire('สำเร็จ', `กลับมาเชื่อมต่อปี ${year} เรียบร้อย`, 'success');
+                            fetchDbConfig();
+                            if (!config.years.includes(String(year))) config.years.push(String(year));
+                            saveSession();
+                        } else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+                    } catch(e) { Swal.fire('Error', e.message, 'error'); }
+                    finally { isLoading.value = false; }
+                }
+            });
+        };
+
+        const deleteYearSheet = (year) => {
+            Swal.fire({
+                title: 'ลบการเชื่อมต่อถาวร?', text: `ลบการตั้งค่าไฟล์ปี ${year} ออกจากระบบ (ไฟล์บน Drive ไม่ถูกลบ)`, icon: 'error',
+                showCancelButton: true, confirmButtonColor: '#ef4444', confirmButtonText: 'ลบถาวร'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    isLoading.value = true;
+                    try {
+                        const res = await runGas('apiDeleteYearSheet', year, user.userId);
+                        if (res.success) {
+                            Swal.fire('ลบสำเร็จ', `ลบการเชื่อมต่อปี ${year} เรียบร้อย`, 'success');
+                            fetchDbConfig();
+                            config.years = config.years.filter(y => String(y) !== String(year));
+                            if (config.selectedYear === String(year)) { config.selectedYear = config.years.length > 0 ? config.selectedYear : ''; }
+                            saveSession();
+                        } else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+                    } catch(e) { Swal.fire('Error', e.message, 'error'); }
+                    finally { isLoading.value = false; }
+                }
+            });
+        };
+
+        // -----------------------------------------------------------------
+        // Sticker Designer Methods
+        // -----------------------------------------------------------------
+        const fetchStickerConfig = async () => {
+            try {
+                const res = await runGas('apiGetStickerConfig');
+                if (res && res.status === 'success') {
+                    Object.assign(stickerConfig, res.config);
+                    if (res.config.layoutJSON) {
+                        try { 
+                            const parsed = JSON.parse(res.config.layoutJSON);
+                            for (let k in parsed) { if (stickerConfig.layout[k]) Object.assign(stickerConfig.layout[k], parsed[k]); }
+                        } catch(e) { console.error(e); }
+                    }
+                }
+            } catch (e) {}
+        };
+
+        const saveStickerConfig = async () => {
+            if ((user.role || '').toUpperCase() !== 'ADMIN') { Swal.fire('ปฏิเสธการเข้าถึง', 'เฉพาะ Admin เท่านั้นที่แก้ไขสติกเกอร์ได้', 'warning'); return; }
+            isLoading.value = true;
+            try {
+                const payload = { ...stickerConfig };
+                payload.layoutJSON = JSON.stringify(stickerConfig.layout);
+                delete payload.layout; 
+                const res = await runGas('apiSaveStickerConfig', payload, user.userId);
+                if (res && res.status === 'success') { Swal.fire('สำเร็จ', 'บันทึกเลย์เอาต์สติ๊กเกอร์เรียบร้อย', 'success'); showStickerModal.value = false; } 
+                else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+            } catch (e) { Swal.fire('ข้อผิดพลาด', e.message, 'error'); } finally { isLoading.value = false; }
+        };
+
+        const generatePreviewBarcode = () => {
+            const el = document.getElementById('barcode-preview');
+            if (typeof JsBarcode !== 'undefined' && el && stickerConfig.layout) {
+                JsBarcode(el, `${mockSticker.itemID}-${mockSticker.lot}`, {
+                    format: "CODE128", width: Number(stickerConfig.barcodeWidth) || 1.5, height: Number(stickerConfig.barcodeHeight) || 35, 
+                    displayValue: true, fontSize: 11, fontOptions: "bold", margin: 0, textMargin: 4
+                });
+            }
+        };
+
+        watch(() => showStickerModal.value, (newVal) => { if(newVal) setTimeout(generatePreviewBarcode, 300); });
+        watch(() => [stickerConfig.barcodeHeight, stickerConfig.barcodeWidth], () => { if (showStickerModal.value) generatePreviewBarcode(); }, { deep: true });
+
+        const pxToMm = (px) => px * (25.4 / 96); 
+        const startDrag = (elementKey, event) => {
+            activeStickerElement.value = elementKey;
+            const startX = event.clientX; const startY = event.clientY;
+            const initialX = stickerConfig.layout[elementKey].x; const initialY = stickerConfig.layout[elementKey].y;
+            const onMouseMove = (e) => {
+                const dxMm = pxToMm(e.clientX - startX) / stickerZoom.value; const dyMm = pxToMm(e.clientY - startY) / stickerZoom.value;
+                stickerConfig.layout[elementKey].x = Math.round((initialX + dxMm) * 10) / 10; stickerConfig.layout[elementKey].y = Math.round((initialY + dyMm) * 10) / 10;
+            };
+            const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); };
+            document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
+        };
+
+        const startRotate = (elementKey, event) => {
+            event.stopPropagation(); activeStickerElement.value = elementKey;
+            const targetEl = event.target.closest('.sticker-element');
+            if (!targetEl) return;
+            const rect = targetEl.getBoundingClientRect(); const centerX = rect.left + rect.width / 2; const centerY = rect.top + rect.height / 2;
+            const onMouseMove = (e) => {
+                const radians = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+                let degrees = (radians * (180 / Math.PI)) + 90; if (degrees < 0) degrees += 360;
+                const snap = 15; degrees = Math.round(degrees / snap) * snap; if (degrees === 360) degrees = 0;
+                stickerConfig.layout[elementKey].rot = degrees;
+            };
+            const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); };
+            document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
+        };
+
+        const getFontStr = (fontName) => fontName ? `'${fontName}', 'Noto Sans Thai', sans-serif` : `'Montserrat', 'Noto Sans Thai', sans-serif`;
+
+        const generateAndPrintBarcodes = (itemsArray) => {
+            const count = Number(stickerConfig.autoPrintCount) || 1;
+            if (count <= 0) return;
+
+            let htmlContent = `
+                <!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+                @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Noto+Sans+Thai:wght@400;500;700&family=Roboto+Mono:wght@400;500;700&display=swap');
+                @page { margin: 0; size: ${stickerConfig.width}mm ${stickerConfig.height}mm; }
+                body { margin: 0; padding: 0; width: ${stickerConfig.width}mm; height: ${stickerConfig.height}mm; background: white; color: black; position: relative; overflow: hidden; }
+                .page-break { page-break-after: always; width: 100%; height: 100%; position: relative; }
+                .el { position: absolute; white-space: nowrap; transform-origin: center center; line-height: 1.1; }
+                .barcode-img { display: block; max-width: none; }
+                </style></head><body>
+            `;
+            const l = stickerConfig.layout;
+            itemsArray.forEach(item => {
+                const canvas = document.createElement('canvas'); let barcodeImageBase64 = "";
+                if (l.bar.visible && typeof JsBarcode !== 'undefined') {
+                    JsBarcode(canvas, `${item.itemID}-${item.lot}`, {
+                        format: "CODE128", width: Number(stickerConfig.barcodeWidth) || 1.5, height: Number(stickerConfig.barcodeHeight) || 35, 
+                        displayValue: true, fontSize: 11, fontOptions: "bold", margin: 0, textMargin: 4, lineColor: "#000000"
+                    });
+                    barcodeImageBase64 = canvas.toDataURL("image/png");
+                }
+                const totalPrints = item.qty * count;
+                for (let i = 0; i < totalPrints; i++) {
+                    htmlContent += `<div class="page-break">`;
+                    if (l.cyto.visible) htmlContent += `<div class="el" style="left:${l.cyto.x}mm; top:${l.cyto.y}mm; font-size:${l.cyto.size}pt; font-weight:${l.cyto.bold?'bold':'normal'}; font-family:${getFontStr(l.cyto.font)}; transform: translate(-50%, -50%) rotate(${l.cyto.rot}deg);">${item.itemName.substring(0, 20)}</div>`;
+                    if (l.age.visible) htmlContent += `<div class="el" style="left:${l.age.x}mm; top:${l.age.y}mm; font-size:${l.age.size}pt; font-weight:${l.age.bold?'bold':'normal'}; font-family:${getFontStr(l.age.font)}; transform: translate(-50%, -50%) rotate(${l.age.rot}deg);">Lot: ${item.lot}</div>`;
+                    if (l.spec.visible) htmlContent += `<div class="el" style="left:${l.spec.x}mm; top:${l.spec.y}mm; font-size:${l.spec.size}pt; font-weight:${l.spec.bold?'bold':'normal'}; font-family:${getFontStr(l.spec.font)}; transform: translate(-50%, -50%) rotate(${l.spec.rot}deg);">Exp: ${formatDateThai(item.exp)}</div>`;
+                    if (l.unit.visible) htmlContent += `<div class="el" style="left:${l.unit.x}mm; top:${l.unit.y}mm; font-size:${l.unit.size}pt; font-weight:${l.unit.bold?'bold':'normal'}; font-family:${getFontStr(l.unit.font)}; transform: translate(-50%, -50%) rotate(${l.unit.rot}deg);">${item.unit}</div>`;
+                    if (l.bar.visible && barcodeImageBase64) htmlContent += `<div class="el" style="left:${l.bar.x}mm; top:${l.bar.y}mm; transform: translate(-50%, -50%) rotate(${l.bar.rot}deg);"><img src="${barcodeImageBase64}" class="barcode-img"></div>`;
+                    htmlContent += `</div>`;
+                }
+            });
+            htmlContent += `</body></html>`;
+            
+            const printIframe = document.createElement('iframe'); 
+            printIframe.style.cssText = 'position:fixed; right:0; bottom:0; width:0; height:0; border:0;';
+            document.body.appendChild(printIframe); 
+            
+            const iframeDoc = printIframe.contentWindow.document; 
+            iframeDoc.open(); 
+            iframeDoc.write(htmlContent); 
+            iframeDoc.close();
+            
+            let isPrinted = false; 
+
+            printIframe.onload = () => {
+                setTimeout(() => { 
+                    try {
+                        if (isPrinted) return; 
+                        isPrinted = true;
+                        printIframe.contentWindow.focus(); 
+                        printIframe.contentWindow.print(); 
+                        setTimeout(() => { document.body.removeChild(printIframe); }, 2000); 
+                    } catch(e) {}
+                }, 800); 
+            };
+
+            setTimeout(() => {
+                if (document.body.contains(printIframe)) {
+                    try {
+                        if (isPrinted) return; 
+                        isPrinted = true;
+                        printIframe.contentWindow.focus(); 
+                        printIframe.contentWindow.print(); 
+                        setTimeout(() => { if (document.body.contains(printIframe)) document.body.removeChild(printIframe); }, 2000);
+                    } catch(e) {}
+                }
+            }, 2500);
+        };
+
+        const formatDateThai = (dateString) => {
+            if (!dateString) return '-'; const date = new Date(dateString);
+            return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear() + 543}`;
+        };
+
+        const changeTheme = (newTheme) => { 
+            theme.value = newTheme; 
+            document.documentElement.setAttribute('data-theme', newTheme); 
+            if (user.userId && page.value !== 'login') saveSession(); 
+        };
+
+        const handleImageUpload = (event, type) => {
+            const file = event.target.files[0]; if (!file) return;
+            if (file.size > 5 * 1024 * 1024) { Swal.fire('ไฟล์ใหญ่เกินไป', 'กรุณาอัปโหลดรูปภาพขนาดไม่เกิน 5MB', 'warning'); return; }
+            
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const base64Data = e.target.result; isLoading.value = true;
+                try {
+                    if (type === 'profile') {
+                        const res = await runGas('apiSaveProfileImage', user.userId, base64Data);
+                        if(res.status === 'success') { user.image = res.url; saveSession(); Swal.fire('สำเร็จ', 'อัปเดตรูปโปรไฟล์เรียบร้อย', 'success'); }
+                    } else if (type === 'logo') {
+                        const res = await runGas('apiSaveSystemLogo', base64Data, user.userId);
+                        if(res.status === 'success') { 
+                            systemConfig.logoUrl = res.url; 
+                            localStorage.setItem('reAgenticsLogo_v1', res.url); 
+                            saveSession(); 
+                            showSettingsModal.value = false; 
+                            Swal.fire('สำเร็จ', 'อัปเดตโลโก้ระบบเรียบร้อย', 'success'); 
+                        }
+                    }
+                } catch(err) { Swal.fire('ข้อผิดพลาด', err.message, 'error'); } finally { isLoading.value = false; event.target.value = ''; }
+            };
+            reader.readAsDataURL(file);
+        };
+
+        const openChangePassword = async () => {
+            const { value: formValues } = await Swal.fire({
+                title: 'เปลี่ยนรหัสผ่าน',
+                html: '<input id="swal-input1" class="swal2-input" type="password" placeholder="รหัสผ่านใหม่"><input id="swal-input2" class="swal2-input" type="password" placeholder="ยืนยันรหัสผ่านใหม่">',
+                focusConfirm: false, showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+                preConfirm: () => {
+                    const p1 = document.getElementById('swal-input1').value; const p2 = document.getElementById('swal-input2').value;
+                    if (!p1 || !p2) { Swal.showValidationMessage('กรุณากรอกรหัสให้ครบถ้วน'); return false; }
+                    if (p1 !== p2) { Swal.showValidationMessage('รหัสผ่านไม่ตรงกัน'); return false; }
+                    return p1;
+                }
+            });
+            if (formValues) {
+                isLoading.value = true;
+                try {
+                    const res = await runGas('apiChangePassword', user.userId, formValues);
+                    if(res.status === 'success') { Swal.fire('สำเร็จ', 'เปลี่ยนรหัสผ่านเรียบร้อย', 'success'); } 
+                    else { Swal.fire('ข้อผิดพลาด', res.message, 'error'); }
+                } catch(e) { Swal.fire('ข้อผิดพลาด', e.message, 'error'); } 
+                finally { isLoading.value = false; }
+            }
+        };
+
+        onMounted(() => {
+            window.addEventListener('mousemove', resetAfkTimer, { passive: true }); window.addEventListener('keydown', resetAfkTimer, { passive: true }); window.addEventListener('click', resetAfkTimer, { passive: true });
+            
+            const savedLogo = localStorage.getItem('reAgenticsLogo_v1');
+            if (savedLogo) systemConfig.logoUrl = savedLogo;
+
+            try {
+                const savedStr = localStorage.getItem('reAgenticsUser_v1');
+                if (savedStr) {
+                    const parsed = JSON.parse(savedStr);
+                    if (!parsed.user || !parsed.user.userId) throw new Error("Invalid Session");
+                    
+                    if (parsed.lastActive && (Date.now() - parsed.lastActive > SESSION_LIMIT_MS)) throw new Error("Session expired");
+                    if (parsed.isLocked) { isLocked.value = true; } else { isLocked.value = false; resetAfkTimer(); }
+                    Object.assign(user, parsed.user);
+                    if(parsed.systemLogo) systemConfig.logoUrl = parsed.systemLogo;
+                    if(parsed.theme) changeTheme(parsed.theme);
+                    if (parsed.years) config.years = parsed.years;
+                    if (parsed.selectedYear) config.selectedYear = parsed.selectedYear;
+
+                    isLoading.value = false; page.value = 'dashboard';
+                    fetchData(); fetchStickerConfig(); fetchFormOptions(); startSessionMonitor(); 
+                } else { isLoading.value = false; }
+            } catch (e) { forceLogout(true); }
+        });
+
+        return {
+            appVersion, page, loginStep, formLogin, otpInput, otpMessage, otpCooldown,
+            isLocked, lockPassword, lockError, unlockScreen, 
+            isLoading, isDataLoading, isSpinning, isSidebarOpen,
+            theme, changeTheme, showSettingsModal, showProfileModal, showStickerModal,
+            
+            isDbConfigLoading, dbConfig, dbModalTab, openDbSettingsModal, saveCoreDbConfig, createNewYearSheet,
+            openManualAddYearModal, disconnectYearSheet, reconnectYearSheet, deleteYearSheet, backToSettings,
+            
+            showImageViewer, viewerImageUrl, openImageViewer, closeImageViewer,
+
+            user, systemConfig, config, stats, 
+            
+            // Filters
+            filterDashboardGroup, filterGroup, filterUnit, filterSearch, transactionFilterGroup, transactionFilterUnit,
+            
+            // Computed Filter Sources
+            availableUserGroups, availableGroupsForUser, availableUnitsForGroup, 
+            availableUnitsForFilter, availableUnitsForTransaction, availableUnitsForItemForm,
+            canEditItem, 
+
+            inventoryList, filteredInventory, filteredItemOptions,
+            transactionMode, setTransactionMode, cancelTransaction,
+            receiveStaging, formReceive, formDispense, addReceiveItem, removeStagingItem, submitReceive,
+            handleBarcodeScan, submitManualDispense, availableDispenseLots, isDispenseLotsLoading,
+            maxDispenseQty, selectedReceiveItemImage, selectedDispenseItemImage,
+            
+            // Delivery Note & Transport Speed
+            transactionTransportSpeed, deliveryNoteFileName, handleDeliveryNoteUpload, removeDeliveryNote,
+
+            showItemModal, itemModalMode, formOptions, formItem, isGeneratingId, filteredAnalyzers,
+            openItemModal, closeItemModal, generateAutoId, saveItemData, handleItemImageUpload,
+            
+            getStockColorClass, getStatusText, getStatusBadgeClass, getStatusIconClass,
+            openChangePassword,
+            
+            showPrintModal, isPrintLotsLoading, availableLots, activePrintItem, formPrint,
+            openPrintModal, executePrintOldSticker,
+            
+            stickerConfig, mockSticker, stickerZoom, activeStickerElement,
+            startDrag, startRotate, saveStickerConfig, getFontStr,
+            zoomInSticker: () => { if(stickerZoom.value < 5) stickerZoom.value += 0.1; },
+            zoomOutSticker: () => { if(stickerZoom.value > 0.5) stickerZoom.value -= 0.1; },
+            resetZoomSticker: () => { stickerZoom.value = 3.0; },
+            handleZoomWheel: (e) => { if(e.deltaY < 0) stickerZoom.value += 0.1; else stickerZoom.value -= 0.1; },
+            
+            handleLoginStep1, handleLoginStep2, handleCancelLogin, handleLogout, handleImageUpload,
+            fetchData, forceLogout, handleResendOtp, lockScreen, formatDateThai,
+
+            // Users Admin Management
+            usersList, isUsersLoading, showEditUserModal, formUserEdit, isSavingUser,
+            openUsersAdminPage, fetchUsersList, openEditUserModal, handleUserGroupChange,
+            handleUserRoleChange, saveUserEdit, getRoleBadgeClass, getRoleTextColorClass
+        };
+    }
+});
+
+app.mount('#app');
+</script>
